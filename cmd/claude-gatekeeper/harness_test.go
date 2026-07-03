@@ -37,19 +37,23 @@ func writeHomeConfig(t *testing.T, content string) {
 	})
 }
 
-const denyPushRule = `
-[[rules]]
-tool = 'Bash'
-input = 'git\s+push\b[^|;&]*[\s:+/](main|master)(?=\s|$|:)'
-decision = "deny"
-reason = "Push to protected branch (main/master)"
-`
+// writeHomeShippedConfig installs the ACTUAL shipped gatekeeper.toml into the
+// test HOME, so tests exercise the real rules instead of a hand-copied fixture
+// that can silently drift from the shipped policy.
+func writeHomeShippedConfig(t *testing.T) {
+	t.Helper()
+	data, err := os.ReadFile("../../gatekeeper.toml")
+	if err != nil {
+		t.Fatalf("reading shipped gatekeeper.toml: %v", err)
+	}
+	writeHomeConfig(t, string(data))
+}
 
 // TestHarnessSelectionGrokDeny confirms --harness grok emits grok-native deny
 // wire (exit 2, {"decision":"deny"}) for a push-to-main, routed end-to-end
-// through run().
+// through run() against the SHIPPED rules.
 func TestHarnessSelectionGrokDeny(t *testing.T) {
-	writeHomeConfig(t, denyPushRule)
+	writeHomeShippedConfig(t)
 	stdin := strings.NewReader(`{"tool_name":"run_terminal_cmd","tool_input":{"command":"git push origin main"},"cwd":"/tmp"}`)
 	var stdout bytes.Buffer
 

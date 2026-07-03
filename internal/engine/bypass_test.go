@@ -39,12 +39,15 @@ func TestPushToMainBypassClasses(t *testing.T) {
 		"git push origin main",
 		"git push origin master",
 		"git push -u origin main",
+		"git push -u origin master", // master parity
 		"git push --quiet origin main",
 		"git push origin HEAD:main",
+		"git push origin HEAD:master", // master parity
 		"git push origin main:main",
 		"git push origin :main",              // branch delete via colon refspec
 		"git push origin +main",              // force refspec
 		"git push origin refs/heads/main",    // fully-qualified ref
+		"git push origin refs/heads/master",  // fully-qualified master
 		"FOO=bar git push origin main",       // env-prefix
 		"git -C /some/repo push origin main", // -C path form
 	}
@@ -70,11 +73,14 @@ func TestPushToMainFalsePositiveGuards(t *testing.T) {
 	allowed := []string{
 		"git push origin feature-branch",
 		"git push origin main-feature", // branch literally named main-feature
+		"git push origin main-branch",  // branch literally named main-branch
 		"git push origin mainline",
 		"git push origin feature/main-thing",
 		"git push origin maintenance",
 		"git push origin feature/main",            // ref ENDING in /main but not refs/heads/main
 		"git push origin refs/heads/feature/main", // fully-qualified feature ref
+		"git status",                      // non-push git command must not trip the push rule
+		"git commit -m 'promote to main'", // 'main' in a commit message must not trip it
 	}
 	for _, cmd := range allowed {
 		t.Run("allow/"+cmd, func(t *testing.T) {
