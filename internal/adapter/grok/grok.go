@@ -24,17 +24,15 @@
 // here so no allow is asserted before Q6 resolves. Change exitAbstain (and its
 // test) once the probe answers.
 //
-// SHIP-GATE (Q1 — now the DECISIVE gate). This adapter's hook-deny path is the
-// only candidate hard control on an --always-approve grok agent: a live probe
-// (2026-07-03) confirmed grok's SETTINGS-layer deny list is NOT enforced under
-// --always-approve (a denied command ran clean, no prompt), so settings-deny is
-// prompting-mode-only. Whether a grok-native PreToolUse hook deny
-// ({"decision":"deny"}, exit 2) fires under --always-approve is UNVERIFIED (Q1).
-// Build and unit-test the wire shapes here, but do NOT declare grok
-// live-verified until a Q1/Q6 hook probe passes. If Q1 fails, grok has no
-// in-harness hard enforcement on auto-approve agents and the honest fallback is
-// a config-mode flip + a server-side control (branch protection) — out of this
-// repo's scope, named in the README. See README "Harnesses".
+// Q1 — LIVE-VERIFIED PASS (probe 2026-07-03, grok 0.2.82). In an isolated
+// sandbox under --permission-mode bypassPermissions (grok full-auto), a global
+// ~/.grok/hooks/ PreToolUse hook emitting this adapter's grok-native
+// {"decision":"deny"} + exit 2 BLOCKED a canary command (file never created),
+// while an abstaining call (exit 1, no output) let a control command run. So
+// this adapter is a real in-harness hard control on auto-approve grok agents:
+// grok evaluates PreToolUse hooks before the permission system, regardless of
+// permission mode. (grok's separate settings-layer --deny list is NOT enforced
+// under --always-approve — the hook is; see README.)
 package grok
 
 import (
@@ -54,12 +52,14 @@ const (
 	exitAbstain = 1
 )
 
-// toolAliases maps grok-native tool names onto the canonical taxonomy
-// (design §4.1). Unmapped names pass through unchanged. The mapped set is what
-// the design cites from the grok binary; extend once a live grok probe
-// confirms the full tool taxonomy.
+// toolAliases maps grok-native tool names onto the canonical taxonomy.
+// LIVE-VERIFIED (probe 2026-07-03, grok 0.2.82): grok's PreToolUse hook payload
+// reports the shell tool as "Shell" (NOT "run_terminal_cmd" as the design
+// inferred). Both are mapped for robustness across grok surfaces/versions.
+// Unmapped names pass through unchanged.
 var toolAliases = map[string]string{
-	"run_terminal_cmd": canonical.ToolBash,
+	"Shell":            canonical.ToolBash, // verified: hook payload toolName
+	"run_terminal_cmd": canonical.ToolBash, // design-inferred alias, kept defensively
 	"search_replace":   canonical.ToolEdit,
 	"read_file":        canonical.ToolRead,
 	"grep_search":      canonical.ToolGrep,
@@ -82,16 +82,31 @@ var inputKeys = map[string][]string{
 	canonical.ToolWebSearch: {"query", "search_term"},
 }
 
-// grokInput is grok's hook stdin envelope (design §2.3b). Grok sends either
-// "cwd" or "working_directory"; both are accepted.
+// grokInput is grok's hook stdin envelope.
+// LIVE-VERIFIED (probe 2026-07-03, grok 0.2.82): the fields are camelCase
+// (toolName / toolInput / hookEventName / permissionMode / sessionId /
+// workspaceRoot), NOT the snake_case the design inferred. hookEventName's VALUE
+// is "pre_tool_use". The command lives in toolInput.command.
 type grokInput struct {
-	ToolName         string          `json:"tool_name"`
-	ToolInput        json.RawMessage `json:"tool_input"`
-	SessionID        string          `json:"session_id"`
-	CWD              string          `json:"cwd"`
-	WorkingDirectory string          `json:"working_directory"`
-	HookEventName    string          `json:"hook_event_name"`
-	PermissionMode   string          `json:"permission_mode"`
+	ToolName       string          `json:"toolName"`
+	ToolInput      json.RawMessage `json:"toolInput"`
+	SessionID      string          `json:"sessionId"`
+	CWD            string          `json:"cwd"`
+	WorkspaceRoot  string          `json:"workspaceRoot"`
+	HookEventName  string          `json:"hookEventName"`
+	PermissionMode string          `json:"permissionMode"`
+}
+
+// grokPreToolUseEvent is the hookEventName value grok sends for a PreToolUse
+// hook (verified). normalizeEvent maps it to the canonical "PreToolUse" so the
+// caller's event filter accepts it.
+const grokPreToolUseEvent = "pre_tool_use"
+
+func normalizeEvent(name string) string {
+	if name == grokPreToolUseEvent {
+		return "PreToolUse"
+	}
+	return name
 }
 
 // grokOutput is grok's blocking-hook stdout shape (design §2.3b).
@@ -125,7 +140,7 @@ func (a *Adapter) ParseInput(r io.Reader) (*canonical.ToolCall, error) {
 
 	cwd := in.CWD
 	if cwd == "" {
-		cwd = in.WorkingDirectory
+		cwd = in.WorkspaceRoot
 	}
 
 	return &canonical.ToolCall{
@@ -133,7 +148,7 @@ func (a *Adapter) ParseInput(r io.Reader) (*canonical.ToolCall, error) {
 		InputString:    extractInputString(tool, in.ToolInput),
 		CWD:            cwd,
 		PermissionMode: in.PermissionMode,
-		EventName:      in.HookEventName,
+		EventName:      normalizeEvent(in.HookEventName),
 	}, nil
 }
 

@@ -54,7 +54,9 @@ func writeHomeShippedConfig(t *testing.T) {
 // through run() against the SHIPPED rules.
 func TestHarnessSelectionGrokDeny(t *testing.T) {
 	writeHomeShippedConfig(t)
-	stdin := strings.NewReader(`{"tool_name":"run_terminal_cmd","tool_input":{"command":"git push origin main"},"cwd":"/tmp"}`)
+	// grok's real hook wire (camelCase, toolName "Shell", event "pre_tool_use"),
+	// live-verified 2026-07-03.
+	stdin := strings.NewReader(`{"toolName":"Shell","toolInput":{"command":"git push origin main"},"hookEventName":"pre_tool_use","cwd":"/tmp"}`)
 	var stdout bytes.Buffer
 
 	code := run(stdin, &stdout, []string{"--harness", "grok"})
@@ -71,7 +73,7 @@ func TestHarnessSelectionGrokDeny(t *testing.T) {
 func TestOnErrorMatrix(t *testing.T) {
 	const (
 		validBash  = `{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"/tmp"}`
-		grokBash   = `{"tool_name":"run_terminal_cmd","tool_input":{"command":"git status"},"cwd":"/tmp"}`
+		grokBash   = `{"toolName":"Shell","toolInput":{"command":"git status"},"hookEventName":"pre_tool_use","cwd":"/tmp"}`
 		malformed  = `{not json}`
 		badRegex   = "on_error = \"deny\"\n[[rules]]\ntool='Bash'\ninput='[unclosed'\ndecision=\"allow\"\nreason=\"x\"\n"
 		abstainCfg = "on_error = \"abstain\"\n"

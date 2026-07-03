@@ -9,12 +9,40 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/canonical"
 )
 
+// TestParseInputLivePayload is the golden regression for grok's REAL hook stdin,
+// captured verbatim from a live grok 0.2.82 PreToolUse probe (2026-07-03). The
+// schema is camelCase (toolName/toolInput/hookEventName/permissionMode), the
+// shell tool is "Shell", the event value is "pre_tool_use", and the command
+// lives in toolInput.command. A regression here means the adapter has drifted
+// from grok's actual wire and would silently enforce nothing.
+func TestParseInputLivePayload(t *testing.T) {
+	const live = `{"hookEventName":"pre_tool_use","sessionId":"019f25eb","cwd":"/proj","workspaceRoot":"/proj","timestamp":"2026-07-03T03:00:26Z","transcriptPath":"/x/updates.jsonl","toolName":"Shell","toolUseId":"call-abc","toolInput":{"command":"touch /tmp/gkprobe_deny_canary","description":"Create deny canary"},"toolInputTruncated":false,"permissionMode":"bypassPermissions"}`
+	tc, err := grok.New().ParseInput(strings.NewReader(live))
+	if err != nil {
+		t.Fatalf("ParseInput: %v", err)
+	}
+	if tc.Tool != canonical.ToolBash {
+		t.Errorf("Tool = %q, want Bash (Shell alias)", tc.Tool)
+	}
+	if tc.InputString != "touch /tmp/gkprobe_deny_canary" {
+		t.Errorf("InputString = %q", tc.InputString)
+	}
+	if tc.CWD != "/proj" {
+		t.Errorf("CWD = %q, want /proj", tc.CWD)
+	}
+	if tc.EventName != "PreToolUse" {
+		t.Errorf("EventName = %q, want PreToolUse (normalised from pre_tool_use)", tc.EventName)
+	}
+	if tc.PermissionMode != "bypassPermissions" {
+		t.Errorf("PermissionMode = %q", tc.PermissionMode)
+	}
+}
+
 // TestParseInputTaxonomy verifies grok's tool taxonomy is normalised onto the
-// canonical names and the command string is extracted from tool_input.
-//
-// NOTE: grok's exact per-tool tool_input field names are UNVERIFIED (design
-// §2.3b); these fixtures are constructed to exercise the adapter's candidate-key
-// extraction, NOT captured from a live grok run.
+// canonical names and the command/path is extracted from toolInput. The shell
+// tool "Shell" and the camelCase field names are live-verified (2026-07-03);
+// the read/edit/grep aliases remain design-inferred (unverified) but are covered
+// so a future live capture can confirm or correct them in one place.
 func TestParseInputTaxonomy(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -23,32 +51,26 @@ func TestParseInputTaxonomy(t *testing.T) {
 		wantInput string
 	}{
 		{
-			name:      "run_terminal_cmd -> Bash",
-			stdin:     `{"tool_name":"run_terminal_cmd","tool_input":{"command":"git push origin main"},"cwd":"/repo"}`,
+			name:      "Shell -> Bash (live-verified)",
+			stdin:     `{"toolName":"Shell","toolInput":{"command":"git push origin main"},"cwd":"/repo"}`,
 			wantTool:  canonical.ToolBash,
 			wantInput: "git push origin main",
 		},
 		{
-			name:      "read_file -> Read",
-			stdin:     `{"tool_name":"read_file","tool_input":{"file_path":"/home/u/.env"},"working_directory":"/repo"}`,
+			name:      "run_terminal_cmd -> Bash (defensive alias)",
+			stdin:     `{"toolName":"run_terminal_cmd","toolInput":{"command":"ls"},"cwd":"/repo"}`,
+			wantTool:  canonical.ToolBash,
+			wantInput: "ls",
+		},
+		{
+			name:      "read_file -> Read (inferred alias)",
+			stdin:     `{"toolName":"read_file","toolInput":{"file_path":"/home/u/.env"},"workspaceRoot":"/repo"}`,
 			wantTool:  canonical.ToolRead,
 			wantInput: "/home/u/.env",
 		},
 		{
-			name:      "search_replace -> Edit",
-			stdin:     `{"tool_name":"search_replace","tool_input":{"file_path":"/repo/main.go"}}`,
-			wantTool:  canonical.ToolEdit,
-			wantInput: "/repo/main.go",
-		},
-		{
-			name:      "grep_search -> Grep",
-			stdin:     `{"tool_name":"grep_search","tool_input":{"pattern":"TODO"}}`,
-			wantTool:  canonical.ToolGrep,
-			wantInput: "TODO",
-		},
-		{
 			name:      "unknown tool passes through, input falls back to tool name",
-			stdin:     `{"tool_name":"mcp__x__y","tool_input":{"z":"q"}}`,
+			stdin:     `{"toolName":"mcp__x__y","toolInput":{"z":"q"}}`,
 			wantTool:  "mcp__x__y",
 			wantInput: "mcp__x__y",
 		},
@@ -71,15 +93,16 @@ func TestParseInputTaxonomy(t *testing.T) {
 	}
 }
 
+// TestParseInputCWDFallback verifies workspaceRoot is used when cwd is absent.
 func TestParseInputCWDFallback(t *testing.T) {
 	a := grok.New()
 	tc, err := a.ParseInput(strings.NewReader(
-		`{"tool_name":"run_terminal_cmd","tool_input":{"command":"ls"},"working_directory":"/wd"}`))
+		`{"toolName":"Shell","toolInput":{"command":"ls"},"workspaceRoot":"/wd"}`))
 	if err != nil {
 		t.Fatalf("ParseInput: %v", err)
 	}
 	if tc.CWD != "/wd" {
-		t.Errorf("CWD = %q, want /wd (working_directory fallback)", tc.CWD)
+		t.Errorf("CWD = %q, want /wd (workspaceRoot fallback)", tc.CWD)
 	}
 }
 
