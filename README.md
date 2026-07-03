@@ -1,12 +1,39 @@
-# claude-gatekeeper
+# agent-gatekeeper
 
-A fast PreToolUse permission hook for [Claude Code](https://claude.com/claude-code) that replaces glob-based `permissions` arrays in `settings.json` with PCRE2-compatible regex rules.
+A fast PreToolUse permission hook for coding agents — [Claude Code](https://claude.com/claude-code), [OpenAI Codex CLI](https://github.com/openai/codex), and [xAI grok](https://x.ai) — that replaces glob-based permission arrays with PCRE2-compatible regex rules. One policy, enforced across every harness.
+
+> The product is **agent-gatekeeper**; the binary and repository keep the `claude-gatekeeper` name for install compatibility.
 
 ## Why
 
-Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-prefixed commands like `FOO=bar git commit`, pipe chains, or complex argument patterns. Regex can.
+Agent permission globs (`Bash(git add:*)`) can't match env-prefixed commands like `FOO=bar git commit`, pipe chains, `HEAD:main` refspecs, or complex argument patterns. Regex can.
 
-**claude-gatekeeper** evaluates every tool call against a layered set of regex rules and returns `allow`, `deny`, or abstains (passes to the user). **Deny always wins.** When a tool call is denied, Claude sees the reason and can adjust its approach.
+**agent-gatekeeper** evaluates every tool call against a layered set of regex rules and returns `allow`, `deny`, or **abstain** (no opinion — the harness's native permission system decides). **Deny always wins.** When a tool call is denied, the agent sees the reason and can adjust.
+
+## Harnesses
+
+One binary serves three harnesses, selected by `--harness` (or the `GATEKEEPER_HARNESS` env var; defaults to `claude`). Tool names are normalised to a canonical taxonomy inside each adapter, so the **same `gatekeeper.toml` rules apply verbatim** to all three.
+
+| Harness | Wire | Status |
+|---------|------|--------|
+| `claude` | `hookSpecificOutput.permissionDecision` (exit 0) | **Stable.** Byte-for-byte compatible with prior releases. |
+| `codex` | Same Claude-compatible `hookSpecificOutput` wire | **Live-verified (2026-07-03, codex-cli 0.142.5).** `permissionDecision:"deny"` blocks even under `approval_policy=never` (full auto); silent abstain falls through to the native policy; codex reads both `~/.codex/hooks.json` (global) and project `.codex/hooks.json`. |
+| `grok` | grok-native `{"decision":"deny","reason":...}` (exit 2 deny / exit 0 allow) | **Built + unit-tested against the documented wire; NOT yet live-verified.** Ships only after a live probe confirms a grok-native PreToolUse hook deny fires under `--always-approve` (see the grok gate below). |
+
+**codex** is verified as a real gate: on a fully-autonomous codex agent (`approval_policy=never`), a hook `deny` — and therefore `on_error = "deny"` — actually blocks the command. The default `abstain` falls through to the native policy exactly as documented. Note: `permissionDecision:"ask"` is **not** used — under `codex exec` (headless) it fails open (the command runs), so it is never a safe defer.
+
+**grok is the open one, and it is now the decisive gate.** A live probe (2026-07-03) confirmed grok's **settings-layer** deny list is **not enforced** under `--always-approve` — a denied command ran with no prompt. So on an auto-approve grok agent, settings-deny is prompting-mode-only, and this gatekeeper's PreToolUse **hook** is the only candidate in-harness hard control. Whether a grok-native hook deny fires under `--always-approve` is still unverified; until that probe passes, do **not** treat the grok adapter as load-bearing. If it turns out grok honors no hook deny under always-approve either, the honest posture is to flip the agent out of always-approve **and** rely on a server-side control (e.g. GitHub branch protection) — outside this repo's scope.
+
+Register the hook per harness:
+
+```bash
+claude-gatekeeper setup --harness claude              # writes ~/.claude/settings.json (default)
+claude-gatekeeper setup --harness grok                # writes ~/.grok/hooks/gatekeeper.json
+claude-gatekeeper setup --harness codex               # writes ~/.codex/hooks.json (global; preferred)
+claude-gatekeeper setup --harness codex --project-dir .  # writes ./.codex/hooks.json (project-scoped)
+```
+
+Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
 
 ## Install
 
@@ -43,15 +70,15 @@ claude --plugin-dir /path/to/claude-gatekeeper
 
 ## How it works
 
-1. Claude Code invokes the gatekeeper before each tool call, sending JSON on stdin.
-2. On first run, the shipped `gatekeeper.toml` is auto-copied to `~/.claude/gatekeeper.toml` if it doesn't exist.
-3. Rules are loaded from:
-   - **Global config** — `~/.claude/gatekeeper.toml` (auto-installed on first run)
-   - **Project config** — `.claude/gatekeeper.toml`
-3. Each rule has a `tool` regex (matched against the tool name) and an `input` regex (matched against the command/file path/URL).
-4. **Deny always wins**: if any deny rule matches, the call is blocked and Claude is told why.
-5. If any allow rule matches (and no deny), the call is auto-approved.
-6. If nothing matches (or no config exists), the gatekeeper abstains and Claude Code prompts you.
+1. The harness invokes the gatekeeper before each tool call, sending JSON on stdin.
+2. The `--harness` adapter parses that harness-native JSON into a canonical tool call (normalising the tool name, e.g. grok's `run_terminal_cmd` → `Bash`).
+3. On first run, the shipped `gatekeeper.toml` is auto-copied to `~/.claude/gatekeeper.toml` if no global config exists.
+4. Rules are loaded and layered (see [Config layering](#config-layering)).
+5. Each rule has a `tool` regex (matched against the canonical tool name) and an `input` regex (matched against the command/file path/URL).
+6. **Deny always wins**: if any deny rule matches, the call is blocked and the agent is told why.
+7. If any allow rule matches (and no deny), the call is auto-approved.
+8. If nothing matches (or no config exists), the gatekeeper **abstains** — it writes no verdict and the harness's native permission system decides.
+9. On any gatekeeper *error*, the [`on_error`](#error-behaviour-on_error) posture decides (default: abstain).
 
 ## Default rules
 
@@ -60,7 +87,7 @@ The shipped `gatekeeper.toml` (auto-installed to `~/.claude/gatekeeper.toml` on 
 | Category | Examples |
 |----------|----------|
 | Destructive git | `git reset --hard`, `git clean -f`, `git push --force`, `git commit --amend`, `git branch -D` |
-| Push to main/master | Explicit (`git push origin main`) and implicit (on main branch, run `git push`) |
+| Push to main/master | A boundary regex covering `origin main`, `-u origin main`, `HEAD:main`, `main:main`, `:main` (delete), `+main`, `refs/heads/main`, `git -C <path> push origin main`, and implicit (on main branch, bare `git push`) — while allowing branches merely named `main-feature`/`mainline` |
 | Recursive delete | `rm -r`, `rm -rf` |
 | sed/awk | Forces the Edit tool instead |
 | Destructive SQL | `DROP`, `TRUNCATE`, `DELETE FROM` |
@@ -123,12 +150,27 @@ input = '(?:^|[|;&]\s*)git\s'
 
 ### Config layering
 
-| File | Scope |
-|------|-------|
-| `~/.claude/gatekeeper.toml` | All projects (global — auto-installed on first run) |
-| `.claude/gatekeeper.toml` | Per-project (appended to global) |
+Paths are harness-neutral, with a back-compatible `~/.claude` fallback. For each layer the first path that exists is used:
+
+| Layer | Path (first that exists) | Scope |
+|-------|--------------------------|-------|
+| Global | `${XDG_CONFIG_HOME:-~/.config}/gatekeeper/gatekeeper.toml`, then `~/.claude/gatekeeper.toml` | All projects. `~/.claude` is also the first-run write target, so existing installs are undisturbed. |
+| Project | `<cwd>/.gatekeeper/gatekeeper.toml`, then `<cwd>/.claude/gatekeeper.toml` | Per-project (rules appended to global; scalar knobs like `on_error` overridden). |
 
 Deny always wins across all layers. If no config files exist, the gatekeeper abstains on everything.
+
+### Error behaviour (`on_error`)
+
+A top-level knob controls what the gatekeeper emits when it *itself* fails — unparseable stdin, unparseable config, a bad rule regex, an evaluate error, or a recovered panic. A clean "no rule matched" is **not** an error and always abstains. A **missing** config is likewise a clean absence (no rules → abstain), *not* an error — `on_error = "deny"` does not hard-fail when no config file exists.
+
+```toml
+on_error = "abstain"   # default — emit NO verdict; the harness's native permission system decides.
+# on_error = "deny"    # opt-in hard posture — on any error, emit an explicit deny.
+```
+
+The default is `abstain`: the gatekeeper never decides *for* the permission system on its error path (it forces neither allow nor deny). Each harness encodes abstain natively — Claude/Codex write nothing and exit 0 (their native flow runs); grok has no first-class defer, so its adapter routes abstain through grok's documented fail-open path (no verdict, non-deny exit) so no allow is ever asserted.
+
+> On an auto-approve agent (grok `--always-approve`, codex `approval_policy=never`) the *native* decision is auto-run, so under the default `abstain` a gatekeeper error is a no-op there. If you need a hard floor in that setup, set `on_error = "deny"` **and** keep a server-side control (e.g. GitHub branch protection) — the hook alone cannot defend against not being invoked.
 
 ### Security: config trust boundaries
 

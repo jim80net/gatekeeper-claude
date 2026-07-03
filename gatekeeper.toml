@@ -1,6 +1,13 @@
-# Claude Gatekeeper — Default Rules
+# agent-gatekeeper — Default Rules
 #
-# Copy this file to ~/.claude/gatekeeper.toml to activate.
+# Copy this file to your global config to activate. It is consulted by every
+# harness adapter (claude|codex|grok); tool names are canonicalised in the
+# adapter, so the SAME rules apply verbatim to all three harnesses.
+#
+# Config path resolution (first that exists wins for each layer):
+#   global : ${XDG_CONFIG_HOME:-~/.config}/gatekeeper/gatekeeper.toml, then
+#            ~/.claude/gatekeeper.toml (back-compat; also the first-run write target)
+#   project: <cwd>/.gatekeeper/gatekeeper.toml, then <cwd>/.claude/gatekeeper.toml
 #
 # Rules are evaluated together. Deny ALWAYS wins over allow.
 # All regex patterns are PCRE2-compatible (via regexp2).
@@ -8,6 +15,25 @@
 #
 # Each commented-out "env-prefix aware" variant prepends (\w+=\S+\s+)*
 # to also match commands like: FOO=bar git reset --hard
+
+# =============================================================================
+# Error behaviour — what the gatekeeper emits on its OWN failure
+#
+# on_error applies to: unparseable stdin, missing/unparseable config, a bad
+# rule regex, an evaluate error, or a recovered panic. A clean "no rule matched"
+# is NOT an error — it always abstains.
+#
+#   "abstain" (default) — emit NO decision; the harness's native permission
+#                         system decides. The gatekeeper never decides FOR the
+#                         permission system (never forces allow OR deny on error).
+#   "deny"              — opt-in hard posture: on any error, emit an explicit deny.
+#
+# Note: on an auto-approve agent (grok --always-approve, codex approval_policy=never)
+# the native decision IS auto-run, so under the default "abstain" a gatekeeper
+# error is a no-op there. The load-bearing push-to-main control in that setup is
+# server-side branch protection; this hook is defense-in-depth.
+# =============================================================================
+on_error = "abstain"
 
 # =============================================================================
 # DENY — Destructive git operations
@@ -54,11 +80,31 @@ reason = "Destructive: git branch force-delete"
 
 # =============================================================================
 # DENY — Push to main/master (explicit branch name in command)
+#
+# Boundary regex (strictly stronger than a "git push <remote> main" glob):
+#   git\s+(?:-C\s+\S+\s+)*push      — also matches `git -C <path> push`
+#   [^|;&]*                         — any args up to a pipe/;/& boundary
+#   then EITHER
+#     [\s:+](main|master)           — main/master preceded by space, ':' (HEAD:main),
+#                                     or '+' (+main force refspec)
+#   OR
+#     \brefs/heads/(main|master)    — the fully-qualified protected ref ONLY
+#   with (?=\s|$|:)                 — only when main/master ends the ref, so a
+#                                     branch named "main-feature", "mainline", or
+#                                     "feature/main" is NOT denied.
+#
+# The '/' delimiter is scoped to `refs/heads/` deliberately: a bare `[\s:+/]`
+# would over-block any ref ending in `/main` (e.g. `feature/main`).
+#
+# Catches: `origin main`, `-u origin main`, `HEAD:main`, `main:main`,
+#          `:main` (delete), `+main`, `refs/heads/main`, `git -C <path> push origin main`.
+# The bare `git push` (current branch IS main) case is caught by the
+# precondition rule below.
 # =============================================================================
 
 [[rules]]
 tool   = 'Bash'
-input  = 'git\s+push\s+\S+\s+(main|master)\b'
+input  = 'git\s+(?:-C\s+\S+\s+)*push\b[^|;&]*(?:[\s:+](main|master)(?=\s|$|:)|\brefs/heads/(main|master)(?=\s|$|:))'
 decision = "deny"
 reason = "Push to protected branch (main/master)"
 

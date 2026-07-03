@@ -1,17 +1,52 @@
-# claude-gatekeeper
+# claude-gatekeeper (product: agent-gatekeeper)
 
-PreToolUse permission hook for Claude Code. Written in Go for fast startup.
+PreToolUse permission hook for coding agents — Claude Code, OpenAI Codex, xAI grok.
+Written in Go for fast startup. The binary/repo name is retained for install compat.
 
-## Architecture
+## Architecture — harness-agnostic core + per-harness adapters
 
-- `cmd/claude-gatekeeper/main.go` — CLI entry point, dispatches to hook mode or migrate subcommand
-- `internal/protocol/` — Reads hook JSON from stdin, writes decision JSON to stdout
-- `internal/config/` — Loads TOML rules from `~/.claude/gatekeeper.toml` + `.claude/gatekeeper.toml`
-- `internal/engine/` — Compiles PCRE2 regexes (via regexp2), evaluates rules, deny-always-wins
-- `internal/migrate/` — Converts `settings.json` glob permissions to TOML regex rules
-- `internal/setup/` — Registers/unregisters the hook in `~/.claude/settings.json` (with backup)
+One policy (the TOML rules) is evaluated by a harness-agnostic engine over a
+canonical tool call; thin per-harness adapters translate each harness's native
+hook wire in and out. The target harness is chosen by `--harness`
+(claude|codex|grok), the `GATEKEEPER_HARNESS` env var, or defaults to `claude`.
+
+- `cmd/claude-gatekeeper/main.go` — CLI entry; selects the adapter, runs the hook
+  pipeline (ParseInput → engine.Evaluate → Encode) with the on_error posture and
+  a panic-recover; dispatches migrate/setup/uninstall subcommands.
+- `internal/canonical/` — **harness-agnostic core**: `Decision` (Abstain/Allow/Deny),
+  `ToolCall`, `Verdict`, canonical tool-name constants, `Debugf`. No harness deps.
+- `internal/adapter/` — the `Adapter` SPI (`ParseInput`, `Encode`) + `For(harness)`
+  factory; sub-packages `claude/` (reference, byte-compatible with old behaviour),
+  `codex/` (Claude-compatible wire), `grok/` (grok-native `{"decision":...}` + exit
+  codes; abstain routes through grok's fail-open path).
+- `internal/protocol/` — the **Claude/Codex** hook wire (HookInput/HookOutput +
+  `ExtractInputString`), reused by the claude and codex adapters.
+- `internal/config/` — TOML rules + `on_error` knob; harness-neutral path
+  resolution (XDG + `~/.claude` fallback; `.gatekeeper/` + `.claude/` project
+  overlay); errors on unparseable config (not on missing).
+- `internal/engine/` — compiles PCRE2 regexes (regexp2), evaluates a canonical
+  ToolCall, deny-always-wins, returns a `canonical.Verdict` (Abstain on no match).
+- `internal/migrate/` — converts `settings.json` glob permissions to TOML rules.
+- `internal/setup/` — registers/unregisters the hook per harness: `Install` (claude
+  `~/.claude/settings.json`), `InstallGrok` (`~/.grok/hooks/gatekeeper.json`),
+  `InstallCodex` (`<project>/.codex/hooks.json`) — each with backup.
 - `hooks/hooks.json` — Claude Code plugin hook definition (uses `${CLAUDE_PLUGIN_ROOT}`)
 - `.claude-plugin/plugin.json` — Plugin manifest (hooks auto-loaded from `hooks/hooks.json`)
+
+### Adding a harness
+
+Implement `adapter.Adapter` (ParseInput normalises the harness tool taxonomy onto
+`canonical.Tool*`; Encode writes the harness wire for allow/deny/abstain), register
+it in `adapter.For`, add a `setup.Install<Harness>` writer, and add wire golden +
+on_error tests. The engine and config need no changes — that is the point of the seam.
+
+### Ship-gates (codex/grok not yet live-verified)
+
+The codex and grok adapters are built and unit-tested against the documented wire
+shapes but are NOT claimed live-verified: codex needs `codex login` to confirm
+deny-blocks / global-hook-location / abstain-fallthrough; grok needs one live probe
+that a blocking hook / explicit deny fires under `--always-approve` and how grok reads
+a silent exit-0. See README "Harnesses".
 
 ## Plugin structure
 
@@ -31,7 +66,8 @@ Test as a plugin: `claude --plugin-dir .`
 - **TOML config** with single-quoted strings for zero-escape regex
 - **No baked-in rules** — all rules come from config files; `gatekeeper.toml` auto-copied to `~/.claude/` on first run
 - **Deny always wins** across all config layers
-- **Abstain on any error** or no config (exit 0, empty stdout)
+- **Abstain on error is the default, configurable** — `on_error = "abstain"` (default) emits no verdict so the harness's native permission system decides; `on_error = "deny"` is the opt-in hard posture. A clean no-rule-match always abstains. The gatekeeper never forces allow OR deny on its error path.
+- **Abstain is encoded per harness** — claude/codex write nothing + exit 0; grok routes through its documented fail-open path (no verdict, non-deny exit) so no allow is asserted.
 - **stdout is the protocol** — all debug/error output goes to stderr
 - **Preconditions** allow shell checks (e.g., `git branch --show-current`) for context-dependent rules
 
