@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/jim80net/claude-gatekeeper/compare/v1.2.0...v1.3.0) (2026-07-03)
+
+
+### Features
+
+* harness-agnostic core + codex/grok adapters, configurable on_error ([#21](https://github.com/jim80net/claude-gatekeeper/issues/21)) ([ee44df3](https://github.com/jim80net/claude-gatekeeper/commit/ee44df395435f4dfa5e31eda818f2ac26e178311))
+
+
+### Bug Fixes
+
+* **grok:** correct hook wire schema + install format; Q1 live-verified PASS ([#23](https://github.com/jim80net/claude-gatekeeper/issues/23)) ([d827da9](https://github.com/jim80net/claude-gatekeeper/commit/d827da9a4f1a7781e7ebbc2434f24c3b380c8a15))
+
 ## [1.2.0](https://github.com/jim80net/claude-gatekeeper/compare/v1.1.1...v1.2.0) (2026-03-17)
 
 
