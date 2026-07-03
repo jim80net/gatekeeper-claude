@@ -105,12 +105,13 @@ func Uninstall() error {
 	return nil
 }
 
-// InstallGrok registers a grok-native global blocking hook at
-// ~/.grok/hooks/gatekeeper.json. The schema fields
-// (matcher/enabled/command_raw/timeout_ms) are grok-native (from the grok
-// binary's embedded 10-hooks.md). The project folder must be /hooks-trust'd for
-// grok to execute the hook. binaryPath is the absolute path to the installed
-// gatekeeper binary.
+// InstallGrok registers a GLOBAL grok PreToolUse hook at
+// ~/.grok/hooks/gatekeeper.json. The on-disk format is the Claude-shaped
+// hooks.json ({ "hooks": { "PreToolUse": [ { matcher, hooks:[{type,command,
+// timeout}] } ] } }) — LIVE-VERIFIED against grok 0.2.82 (2026-07-03) and grok's
+// own embedded ~/.grok/hooks/git-gh-only.json example. A global user hook is the
+// documented "hard enforcer" and needs no per-folder trust (only project
+// .grok/hooks/ require /hooks-trust). binaryPath is the installed gatekeeper.
 func InstallGrok(binaryPath string) error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -127,16 +128,27 @@ func InstallGrok(binaryPath string) error {
 	}
 
 	hook := map[string]interface{}{
-		"matcher":     "",
-		"enabled":     true,
-		"command_raw": binaryPath + " --harness grok",
-		"timeout_ms":  5000,
+		"description": "agent-gatekeeper PreToolUse hard enforcer",
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "",
+					"hooks": []interface{}{
+						map[string]interface{}{
+							"type":    "command",
+							"command": binaryPath + " --harness grok",
+							"timeout": 5,
+						},
+					},
+				},
+			},
+		},
 	}
 	if err := writeJSONFile(hookPath, hook); err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "grok hook installed in %s\n", hookPath)
-	fmt.Fprintf(os.Stderr, "Run /hooks-trust on each grok project folder so the hook executes.\n")
+	fmt.Fprintf(os.Stderr, "Global user hooks execute without per-folder trust.\n")
 	return nil
 }
 

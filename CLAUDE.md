@@ -40,13 +40,21 @@ Implement `adapter.Adapter` (ParseInput normalises the harness tool taxonomy ont
 it in `adapter.For`, add a `setup.Install<Harness>` writer, and add wire golden +
 on_error tests. The engine and config need no changes — that is the point of the seam.
 
-### Ship-gates (codex/grok not yet live-verified)
+### Ship-gates (codex + grok now LIVE-VERIFIED)
 
-The codex and grok adapters are built and unit-tested against the documented wire
-shapes but are NOT claimed live-verified: codex needs `codex login` to confirm
-deny-blocks / global-hook-location / abstain-fallthrough; grok needs one live probe
-that a blocking hook / explicit deny fires under `--always-approve` and how grok reads
-a silent exit-0. See README "Harnesses".
+Both variant adapters are live-verified (2026-07-03):
+- **codex** (0.142.5): `permissionDecision:"deny"` blocks under `approval_policy=never`;
+  silent abstain falls through to native policy; both `~/.codex/hooks.json` (global) and
+  project `.codex/hooks.json` are read.
+- **grok** (0.2.82): a global `~/.grok/hooks/` PreToolUse hook emitting grok-native
+  `{"decision":"deny"}` + exit 2 blocks a tool call under `--permission-mode
+  bypassPermissions`; abstain (exit 1) falls through. The verified hook stdin schema is
+  camelCase (`toolName`="Shell", `toolInput.command`, `hookEventName`="pre_tool_use") and
+  the global hook file is Claude-shaped — see the grok adapter/`InstallGrok`. grok's
+  settings-layer `--deny` is a separate mechanism, NOT enforced under `--always-approve`.
+
+See README "Harnesses" for the provenance. The grok schema was corrected from an earlier
+(wrong) inference by the live probe — a reminder to verify external wire shapes, not infer.
 
 ## Plugin structure
 

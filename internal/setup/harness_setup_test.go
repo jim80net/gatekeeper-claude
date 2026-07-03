@@ -23,21 +23,30 @@ func TestInstallGrok(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading grok hook: %v", err)
 	}
-	var hook map[string]interface{}
-	if err := json.Unmarshal(data, &hook); err != nil {
+	// grok's global hook is the Claude-shaped hooks.json (live-verified).
+	var cfg struct {
+		Hooks struct {
+			PreToolUse []struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if hook["command_raw"] != "/usr/local/bin/gatekeeper --harness grok" {
-		t.Errorf("command_raw = %v", hook["command_raw"])
+	if len(cfg.Hooks.PreToolUse) != 1 || len(cfg.Hooks.PreToolUse[0].Hooks) != 1 {
+		t.Fatalf("unexpected grok hook structure: %s", data)
 	}
-	if hook["enabled"] != true {
-		t.Errorf("enabled = %v, want true", hook["enabled"])
+	h := cfg.Hooks.PreToolUse[0].Hooks[0]
+	if h.Type != "command" {
+		t.Errorf("type = %q, want command", h.Type)
 	}
-	if _, ok := hook["matcher"]; !ok {
-		t.Error("missing matcher field")
-	}
-	if _, ok := hook["timeout_ms"]; !ok {
-		t.Error("missing timeout_ms field")
+	if h.Command != "/usr/local/bin/gatekeeper --harness grok" {
+		t.Errorf("command = %q", h.Command)
 	}
 }
 
