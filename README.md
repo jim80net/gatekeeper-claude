@@ -17,20 +17,23 @@ One binary serves three harnesses, selected by `--harness` (or the `GATEKEEPER_H
 | Harness | Wire | Status |
 |---------|------|--------|
 | `claude` | `hookSpecificOutput.permissionDecision` (exit 0) | **Stable.** Byte-for-byte compatible with prior releases. |
-| `codex` | Same Claude-compatible `hookSpecificOutput` wire | **Built + unit-tested against the documented wire.** Ships after live verification post-`codex login` — that `permissionDecision:"deny"` blocks, the global-vs-project hook location, and whether an empty response defers to `approval_policy` (see below). |
-| `grok` | grok-native `{"decision":"deny","reason":...}` (exit 2 deny / exit 0 allow) | **Built + unit-tested against the documented wire.** Ships after one live probe confirms a blocking hook / explicit deny fires under grok `--always-approve`, and how grok treats a silent exit-0 (allow vs defer). |
+| `codex` | Same Claude-compatible `hookSpecificOutput` wire | **Live-verified (2026-07-03, codex-cli 0.142.5).** `permissionDecision:"deny"` blocks even under `approval_policy=never` (full auto); silent abstain falls through to the native policy; codex reads both `~/.codex/hooks.json` (global) and project `.codex/hooks.json`. |
+| `grok` | grok-native `{"decision":"deny","reason":...}` (exit 2 deny / exit 0 allow) | **Built + unit-tested against the documented wire; NOT yet live-verified.** Ships only after a live probe confirms a grok-native PreToolUse hook deny fires under `--always-approve` (see the grok gate below). |
 
-The codex and grok adapters are complete and covered by wire-shape golden tests, but are **not** yet claimed as live-verified — the remaining checks require an authenticated codex session and a (paid) grok inference probe respectively. Do not treat them as load-bearing on an auto-approve agent until those probes pass; pair the hook with a server-side control (e.g. GitHub branch protection).
+**codex** is verified as a real gate: on a fully-autonomous codex agent (`approval_policy=never`), a hook `deny` — and therefore `on_error = "deny"` — actually blocks the command. The default `abstain` falls through to the native policy exactly as documented. Note: `permissionDecision:"ask"` is **not** used — under `codex exec` (headless) it fails open (the command runs), so it is never a safe defer.
+
+**grok is the open one, and it is now the decisive gate.** A live probe (2026-07-03) confirmed grok's **settings-layer** deny list is **not enforced** under `--always-approve` — a denied command ran with no prompt. So on an auto-approve grok agent, settings-deny is prompting-mode-only, and this gatekeeper's PreToolUse **hook** is the only candidate in-harness hard control. Whether a grok-native hook deny fires under `--always-approve` is still unverified; until that probe passes, do **not** treat the grok adapter as load-bearing. If it turns out grok honors no hook deny under always-approve either, the honest posture is to flip the agent out of always-approve **and** rely on a server-side control (e.g. GitHub branch protection) — outside this repo's scope.
 
 Register the hook per harness:
 
 ```bash
-gatekeeper setup --harness claude                    # writes ~/.claude/settings.json (default)
-gatekeeper setup --harness grok                       # writes ~/.grok/hooks/gatekeeper.json
-gatekeeper setup --harness codex --project-dir .      # writes ./.codex/hooks.json
+claude-gatekeeper setup --harness claude              # writes ~/.claude/settings.json (default)
+claude-gatekeeper setup --harness grok                # writes ~/.grok/hooks/gatekeeper.json
+claude-gatekeeper setup --harness codex               # writes ~/.codex/hooks.json (global; preferred)
+claude-gatekeeper setup --harness codex --project-dir .  # writes ./.codex/hooks.json (project-scoped)
 ```
 
-Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation).
+Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
 
 ## Install
 
@@ -158,7 +161,7 @@ Deny always wins across all layers. If no config files exist, the gatekeeper abs
 
 ### Error behaviour (`on_error`)
 
-A top-level knob controls what the gatekeeper emits when it *itself* fails — unparseable stdin, missing/unparseable config, a bad rule regex, an evaluate error, or a recovered panic. A clean "no rule matched" is **not** an error and always abstains.
+A top-level knob controls what the gatekeeper emits when it *itself* fails — unparseable stdin, unparseable config, a bad rule regex, an evaluate error, or a recovered panic. A clean "no rule matched" is **not** an error and always abstains. A **missing** config is likewise a clean absence (no rules → abstain), *not* an error — `on_error = "deny"` does not hard-fail when no config file exists.
 
 ```toml
 on_error = "abstain"   # default — emit NO verdict; the harness's native permission system decides.

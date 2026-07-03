@@ -19,6 +19,12 @@ func TestParseInput(t *testing.T) {
 	if tc.Tool != canonical.ToolBash || tc.InputString != "git status" {
 		t.Errorf("got tool=%q input=%q", tc.Tool, tc.InputString)
 	}
+	if tc.CWD != "/repo" {
+		t.Errorf("CWD = %q, want /repo", tc.CWD)
+	}
+	if tc.EventName != "PreToolUse" {
+		t.Errorf("EventName = %q, want PreToolUse", tc.EventName)
+	}
 }
 
 // TestParseInputShellAlias verifies a codex-native shell tool name normalises

@@ -73,6 +73,8 @@ func TestPushToMainFalsePositiveGuards(t *testing.T) {
 		"git push origin mainline",
 		"git push origin feature/main-thing",
 		"git push origin maintenance",
+		"git push origin feature/main",            // ref ENDING in /main but not refs/heads/main
+		"git push origin refs/heads/feature/main", // fully-qualified feature ref
 	}
 	for _, cmd := range allowed {
 		t.Run("allow/"+cmd, func(t *testing.T) {

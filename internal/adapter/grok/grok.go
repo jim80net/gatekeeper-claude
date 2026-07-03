@@ -24,10 +24,17 @@
 // here so no allow is asserted before Q6 resolves. Change exitAbstain (and its
 // test) once the probe answers.
 //
-// SHIP-GATE (design §8): the grok deny path (and on_error="deny") depends on
-// Q1 — whether an explicit deny/hook fires under grok's --always-approve. Build
-// and unit-test the wire shapes; do not declare grok live-verified until the
-// Q1/Q6 probe passes. See README.
+// SHIP-GATE (Q1 — now the DECISIVE gate). This adapter's hook-deny path is the
+// only candidate hard control on an --always-approve grok agent: a live probe
+// (2026-07-03) confirmed grok's SETTINGS-layer deny list is NOT enforced under
+// --always-approve (a denied command ran clean, no prompt), so settings-deny is
+// prompting-mode-only. Whether a grok-native PreToolUse hook deny
+// ({"decision":"deny"}, exit 2) fires under --always-approve is UNVERIFIED (Q1).
+// Build and unit-test the wire shapes here, but do NOT declare grok
+// live-verified until a Q1/Q6 hook probe passes. If Q1 fails, grok has no
+// in-harness hard enforcement on auto-approve agents and the honest fallback is
+// a config-mode flip + a server-side control (branch protection) — out of this
+// repo's scope, named in the README. See README "Harnesses".
 package grok
 
 import (
@@ -146,7 +153,11 @@ func extractInputString(tool string, raw json.RawMessage) string {
 	for _, k := range keys {
 		if v, present := fields[k]; present {
 			var s string
-			if json.Unmarshal(v, &s) == nil && s != "" {
+			if json.Unmarshal(v, &s) == nil {
+				// Return the decoded value even when empty: a present key that
+				// decodes to "" is the actual input (an empty command), matching
+				// the claude/codex adapters. Only a MISSING or non-string key
+				// falls through to the next candidate / the tool-name default.
 				return s
 			}
 		}

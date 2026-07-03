@@ -190,7 +190,7 @@ func runSetup(args []string) int {
 	fs.SetOutput(os.Stderr)
 	binaryPath := fs.String("binary", "", "Absolute path to the installed binary (auto-detected if omitted)")
 	harness := fs.String("harness", "claude", "Target harness: claude|codex|grok")
-	projectDir := fs.String("project-dir", "", "Project directory for the codex hook (default: current directory)")
+	projectDir := fs.String("project-dir", "", "Codex hook location: empty = global ~/.codex/hooks.json (default); a path = that project's .codex/hooks.json")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}

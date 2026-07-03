@@ -140,28 +140,43 @@ func InstallGrok(binaryPath string) error {
 	return nil
 }
 
-// InstallCodex registers a codex PreToolUse hook in <projectDir>/.codex/hooks.json.
+// InstallCodex registers a codex PreToolUse hook. Codex reads BOTH a global
+// ~/.codex/hooks.json AND a project <projectDir>/.codex/hooks.json (verified
+// live 2026-07-03, codex-cli 0.142.5), so:
+//   - projectDir == ""  -> writes the GLOBAL ~/.codex/hooks.json (preferred:
+//     one registration covers every project).
+//   - projectDir != ""  -> writes <projectDir>/.codex/hooks.json (project-scoped).
+//
 // The structure is the Claude-shaped hooks config verified against a real
-// .codex/hooks.json and the codex binary's embedded schema. Codex's support for
-// a GLOBAL hooks config is not yet verified, so this writes the project-level
-// file; run it per project until that is confirmed. An empty projectDir defaults
-// to the current directory.
+// .codex/hooks.json and the codex binary's embedded schema.
 func InstallCodex(binaryPath, projectDir string) error {
+	var hookDir string
 	if projectDir == "" {
-		wd, err := os.Getwd()
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("cannot determine current directory: %w", err)
+			return fmt.Errorf("cannot determine home directory: %w", err)
 		}
-		projectDir = wd
-	}
-	hookDir := filepath.Join(projectDir, ".codex")
-	if err := os.MkdirAll(hookDir, 0755); err != nil {
-		return fmt.Errorf("creating %s: %w", hookDir, err)
+		hookDir = filepath.Join(homeDir, ".codex")
+	} else {
+		hookDir = filepath.Join(projectDir, ".codex")
 	}
 	hookPath := filepath.Join(hookDir, "hooks.json")
 
+	// Merge into any existing hooks.json rather than overwriting it — a codex
+	// hooks.json may hold OTHER project hooks, and clobbering it would silently
+	// disable them. Read → drop any prior gatekeeper entry → append ours → write.
+	config, err := readSettingsMap(hookPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", hookPath, err)
+	}
+	if config == nil {
+		config = map[string]interface{}{}
+	}
 	if err := backup(hookPath); err != nil {
 		return err
+	}
+	if hasGatekeeperHook(config) {
+		removeGatekeeperHook(config)
 	}
 
 	hookEntry := map[string]interface{}{
@@ -170,14 +185,16 @@ func InstallCodex(binaryPath, projectDir string) error {
 		"timeout":       10,
 		"statusMessage": "Checking permissions...",
 	}
-	config := map[string]interface{}{
-		"hooks": map[string]interface{}{
-			"PreToolUse": []interface{}{
-				map[string]interface{}{
-					"hooks": []interface{}{hookEntry},
-				},
-			},
-		},
+	hooks := getMap(config, "hooks")
+	preToolUse := getSlice(hooks, "PreToolUse")
+	preToolUse = append(preToolUse, map[string]interface{}{
+		"hooks": []interface{}{hookEntry},
+	})
+	hooks["PreToolUse"] = preToolUse
+	config["hooks"] = hooks
+
+	if err := os.MkdirAll(hookDir, 0755); err != nil {
+		return fmt.Errorf("creating %s: %w", hookDir, err)
 	}
 	if err := writeJSONFile(hookPath, config); err != nil {
 		return err

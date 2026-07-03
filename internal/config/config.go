@@ -99,16 +99,30 @@ func xdgGlobalPath() string {
 // resolveGlobalPath returns the global config path to load: the XDG canonical
 // path when it exists, otherwise the back-compat ~/.claude path. Returns ""
 // when neither exists (no global config).
+//
+// A candidate is skipped ONLY when it is definitively absent (os.IsNotExist).
+// Any other stat error (permission denied, transient I/O) does NOT silently
+// fall through to the next candidate — the path is returned so Load surfaces
+// the real read error via the on_error posture instead of quietly using a
+// different config than the operator intended.
 func resolveGlobalPath() string {
 	for _, p := range []string{xdgGlobalPath(), GlobalConfigPath()} {
 		if p == "" {
 			continue
 		}
-		if _, err := os.Stat(p); err == nil {
+		if pathPresent(p) {
 			return p
 		}
 	}
 	return ""
+}
+
+// pathPresent reports whether a config path should be treated as present: true
+// when it exists, and also true on a non-ENOENT stat error (so the real error
+// surfaces at read time rather than being masked as "not present").
+func pathPresent(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil || !os.IsNotExist(err)
 }
 
 // resolveProjectPath returns the project config overlay path for projectDir:
@@ -124,7 +138,7 @@ func resolveProjectPath(projectDir string) string {
 		filepath.Join(projectDir, ".claude", "gatekeeper.toml"),
 	}
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		if pathPresent(p) {
 			return p
 		}
 	}

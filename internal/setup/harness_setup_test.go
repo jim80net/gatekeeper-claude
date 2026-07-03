@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
@@ -40,14 +41,54 @@ func TestInstallGrok(t *testing.T) {
 	}
 }
 
-func TestInstallCodex(t *testing.T) {
+func TestInstallCodexProject(t *testing.T) {
 	projectDir := t.TempDir()
 
 	if err := setup.InstallCodex("/usr/local/bin/gatekeeper", projectDir); err != nil {
 		t.Fatalf("InstallCodex: %v", err)
 	}
 
-	hookPath := filepath.Join(projectDir, ".codex", "hooks.json")
+	assertCodexHook(t, filepath.Join(projectDir, ".codex", "hooks.json"))
+}
+
+// TestInstallCodexGlobal covers the preferred global registration
+// (~/.codex/hooks.json) selected by an empty projectDir (Q3: codex reads it).
+func TestInstallCodexGlobal(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	if err := setup.InstallCodex("/usr/local/bin/gatekeeper", ""); err != nil {
+		t.Fatalf("InstallCodex global: %v", err)
+	}
+
+	assertCodexHook(t, filepath.Join(homeDir, ".codex", "hooks.json"))
+}
+
+// TestInstallCodexPreservesExisting confirms an existing non-gatekeeper hook in
+// .codex/hooks.json survives a gatekeeper install (merge, not clobber).
+func TestInstallCodexPreservesExisting(t *testing.T) {
+	projectDir := t.TempDir()
+	codexDir := filepath.Join(projectDir, ".codex")
+	os.MkdirAll(codexDir, 0755)
+	existing := `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"/opt/other-tool --run"}]}]}}`
+	os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(existing), 0644)
+
+	if err := setup.InstallCodex("/usr/local/bin/claude-gatekeeper", projectDir); err != nil {
+		t.Fatalf("InstallCodex: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(codexDir, "hooks.json"))
+	s := string(data)
+	if !strings.Contains(s, "/opt/other-tool --run") {
+		t.Error("existing non-gatekeeper hook was clobbered")
+	}
+	if !strings.Contains(s, "claude-gatekeeper --harness codex") {
+		t.Error("gatekeeper hook was not added")
+	}
+}
+
+func assertCodexHook(t *testing.T, hookPath string) {
+	t.Helper()
 	data, err := os.ReadFile(hookPath)
 	if err != nil {
 		t.Fatalf("reading codex hook: %v", err)
@@ -90,7 +131,10 @@ func TestInstallGrokBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A backup of the first install should exist alongside the hook.
-	entries, _ := os.ReadDir(filepath.Join(homeDir, ".grok", "hooks"))
+	entries, err := os.ReadDir(filepath.Join(homeDir, ".grok", "hooks"))
+	if err != nil {
+		t.Fatalf("reading grok hooks dir: %v", err)
+	}
 	backups := 0
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) != ".json" && len(e.Name()) > len("gatekeeper.json") {
