@@ -1,4 +1,9 @@
-// Package engine evaluates gatekeeper rules against hook inputs.
+// Package engine evaluates gatekeeper rules against canonical tool calls.
+//
+// The engine is harness-agnostic: it consumes a canonical.ToolCall and returns
+// a canonical.Verdict. All harness-specific wire parsing/encoding lives in the
+// adapters (internal/adapter/*); the PCRE2 rule matching, deny-wins policy,
+// preconditions, and Bash cd-prefix/heredoc handling live here.
 package engine
 
 import (
@@ -10,8 +15,8 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2"
+	"github.com/jim80net/claude-gatekeeper/internal/canonical"
 	"github.com/jim80net/claude-gatekeeper/internal/config"
-	"github.com/jim80net/claude-gatekeeper/internal/protocol"
 )
 
 // CompiledRule is a rule with pre-compiled regex patterns.
@@ -20,7 +25,7 @@ type CompiledRule struct {
 	InputRegex        *regexp2.Regexp
 	PreconditionCmd   string
 	PreconditionRegex *regexp2.Regexp
-	Decision          protocol.Decision
+	Decision          canonical.Decision
 	Reason            string
 }
 
@@ -58,9 +63,9 @@ func New(cfg *config.Config, debug bool) (*Engine, error) {
 			}
 		}
 
-		decision := protocol.Decision(r.Decision)
-		if decision != protocol.Allow && decision != protocol.Deny {
-			return nil, fmt.Errorf("rule %d: invalid decision %q (must be \"allow\" or \"deny\")", i, r.Decision)
+		decision, err := parseDecision(r.Decision)
+		if err != nil {
+			return nil, fmt.Errorf("rule %d: %w", i, err)
 		}
 
 		rules = append(rules, CompiledRule{
@@ -75,32 +80,46 @@ func New(cfg *config.Config, debug bool) (*Engine, error) {
 	return &Engine{rules: rules, debug: debug, execCommand: defaultExecCommand}, nil
 }
 
-// Evaluate checks all rules and returns a decision.
-// Returns nil when no rules match (abstain).
-func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, error) {
-	inputStr := protocol.ExtractInputString(input.ToolName, input.ToolInput)
+// parseDecision maps a rule's decision string to a canonical decision. A rule
+// may only allow or deny; "abstain" is not a valid rule outcome (it is the
+// no-match default).
+func parseDecision(s string) (canonical.Decision, error) {
+	switch s {
+	case "allow":
+		return canonical.Allow, nil
+	case "deny":
+		return canonical.Deny, nil
+	default:
+		return canonical.Abstain, fmt.Errorf("invalid decision %q (must be \"allow\" or \"deny\")", s)
+	}
+}
+
+// Evaluate checks all rules against a canonical tool call and returns a verdict.
+// Returns a Verdict with Decision == canonical.Abstain when no rule matches.
+func (e *Engine) Evaluate(tc *canonical.ToolCall) (canonical.Verdict, error) {
+	inputStr := tc.InputString
 
 	if e.debug {
-		protocol.Debugf("evaluate: tool=%s input=%q", input.ToolName, inputStr)
+		canonical.Debugf("evaluate: tool=%s input=%q", tc.Tool, inputStr)
 	}
 
 	// For Bash commands with a leading "cd <path> &&", extract the prefix
 	// so preconditions run in the correct directory.
 	var cdPrefix string
-	if input.ToolName == "Bash" {
+	if tc.Tool == canonical.ToolBash {
 		cdPrefix = ExtractCDPrefix(inputStr)
 		if e.debug && cdPrefix != "" {
-			protocol.Debugf("  extracted cd prefix: %s", cdPrefix)
+			canonical.Debugf("  extracted cd prefix: %s", cdPrefix)
 		}
 	}
 
 	// For Bash commands, strip heredoc bodies so deny rules don't match
 	// against data content (e.g., commit messages mentioning "rm -rf").
 	matchStr := inputStr
-	if input.ToolName == "Bash" {
+	if tc.Tool == canonical.ToolBash {
 		matchStr = StripHeredocs(inputStr)
 		if e.debug && matchStr != inputStr {
-			protocol.Debugf("  stripped heredocs: %q", matchStr)
+			canonical.Debugf("  stripped heredocs: %q", matchStr)
 		}
 	}
 
@@ -108,7 +127,7 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 	anyAllow := false
 
 	for _, rule := range e.rules {
-		toolMatch, err := rule.ToolRegex.MatchString(input.ToolName)
+		toolMatch, err := rule.ToolRegex.MatchString(tc.Tool)
 		if err != nil || !toolMatch {
 			continue
 		}
@@ -120,40 +139,40 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 
 		// Check precondition if present.
 		if rule.PreconditionCmd != "" {
-			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, input.CWD, cdPrefix) {
+			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, tc.CWD, cdPrefix) {
 				if e.debug {
-					protocol.Debugf("  precondition failed: %s", rule.Reason)
+					canonical.Debugf("  precondition failed: %s", rule.Reason)
 				}
 				continue
 			}
 		}
 
 		if e.debug {
-			protocol.Debugf("  matched: decision=%s reason=%q", rule.Decision, rule.Reason)
+			canonical.Debugf("  matched: decision=%s reason=%q", rule.Decision, rule.Reason)
 		}
 
 		switch rule.Decision {
-		case protocol.Deny:
+		case canonical.Deny:
 			denyReasons = append(denyReasons, rule.Reason)
-		case protocol.Allow:
+		case canonical.Allow:
 			anyAllow = true
 		}
 	}
 
 	// Deny always wins.
 	if len(denyReasons) > 0 {
-		return makeOutput(protocol.Deny, strings.Join(denyReasons, "; ")), nil
+		return canonical.Verdict{Decision: canonical.Deny, Reason: strings.Join(denyReasons, "; ")}, nil
 	}
 
 	if anyAllow {
-		return makeOutput(protocol.Allow, "Approved by gatekeeper"), nil
+		return canonical.Verdict{Decision: canonical.Allow, Reason: "Approved by gatekeeper"}, nil
 	}
 
 	// No match → abstain.
 	if e.debug {
-		protocol.Debugf("  no rules matched, abstaining")
+		canonical.Debugf("  no rules matched, abstaining")
 	}
-	return nil, nil
+	return canonical.Verdict{Decision: canonical.Abstain}, nil
 }
 
 func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd string, cdPrefix string) bool {
@@ -170,7 +189,7 @@ func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd stri
 	output, err := e.execCommand(ctx, cwd, effectiveCmd)
 	if err != nil {
 		if e.debug {
-			protocol.Debugf("  precondition cmd error: %v", err)
+			canonical.Debugf("  precondition cmd error: %v", err)
 		}
 		return false
 	}
@@ -255,14 +274,4 @@ func StripHeredocs(command string) string {
 	}
 
 	return strings.Join(result, "\n")
-}
-
-func makeOutput(decision protocol.Decision, reason string) *protocol.HookOutput {
-	return &protocol.HookOutput{
-		HookSpecificOutput: &protocol.HookSpecificOutput{
-			HookEventName:            "PreToolUse",
-			PermissionDecision:       decision,
-			PermissionDecisionReason: reason,
-		},
-	}
 }

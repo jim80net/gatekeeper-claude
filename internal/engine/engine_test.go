@@ -2,37 +2,25 @@ package engine_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"testing"
 
+	"github.com/jim80net/claude-gatekeeper/internal/canonical"
 	"github.com/jim80net/claude-gatekeeper/internal/config"
 	"github.com/jim80net/claude-gatekeeper/internal/engine"
-	"github.com/jim80net/claude-gatekeeper/internal/protocol"
 )
 
-func bashInput(cmd string) *protocol.HookInput {
-	return &protocol.HookInput{
-		ToolName:  "Bash",
-		ToolInput: json.RawMessage(fmt.Sprintf(`{"command":%q}`, cmd)),
-		CWD:       "/tmp",
-	}
+func bashInput(cmd string) *canonical.ToolCall {
+	return &canonical.ToolCall{Tool: canonical.ToolBash, InputString: cmd, CWD: "/tmp"}
 }
 
-func readInput(path string) *protocol.HookInput {
-	return &protocol.HookInput{
-		ToolName:  "Read",
-		ToolInput: json.RawMessage(fmt.Sprintf(`{"file_path":%q}`, path)),
-		CWD:       "/tmp",
-	}
+func readInput(path string) *canonical.ToolCall {
+	return &canonical.ToolCall{Tool: canonical.ToolRead, InputString: path, CWD: "/tmp"}
 }
 
-func toolInput(tool string) *protocol.HookInput {
-	return &protocol.HookInput{
-		ToolName:  tool,
-		ToolInput: json.RawMessage(`{}`),
-		CWD:       "/tmp",
-	}
+// toolInput models a non-Bash tool whose matchable string is its own name
+// (the canonical default for tools like Glob/Grep/Edit with no salient input).
+func toolInput(tool string) *canonical.ToolCall {
+	return &canonical.ToolCall{Tool: tool, InputString: tool, CWD: "/tmp"}
 }
 
 func newEngine(t *testing.T, rules []config.Rule) *engine.Engine {
@@ -60,12 +48,12 @@ func TestDenyAlwaysWins(t *testing.T) {
 		{Tool: "Bash", Input: "git\\s+reset\\s+--hard", Decision: "deny", Reason: "deny reset"},
 	})
 
-	out, err := eng.Evaluate(bashInput("git reset --hard"))
+	v, err := eng.Evaluate(bashInput("git reset --hard"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
-		t.Error("expected deny for git reset --hard")
+	if v.Decision != canonical.Deny {
+		t.Errorf("expected deny for git reset --hard, got %s", v.Decision)
 	}
 }
 
@@ -74,12 +62,12 @@ func TestAllowWhenMatched(t *testing.T) {
 		{Tool: "Bash", Input: "^git\\s", Decision: "allow", Reason: "allow git"},
 	})
 
-	out, err := eng.Evaluate(bashInput("git status"))
+	v, err := eng.Evaluate(bashInput("git status"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Allow {
-		t.Error("expected allow for git status")
+	if v.Decision != canonical.Allow {
+		t.Errorf("expected allow for git status, got %s", v.Decision)
 	}
 }
 
@@ -88,12 +76,12 @@ func TestAbstainWhenNoMatch(t *testing.T) {
 		{Tool: "Bash", Input: "^git\\s", Decision: "allow", Reason: "allow git"},
 	})
 
-	out, err := eng.Evaluate(bashInput("some-unknown-command"))
+	v, err := eng.Evaluate(bashInput("some-unknown-command"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != nil {
-		t.Error("expected abstain (nil) for unmatched command")
+	if v.Decision != canonical.Abstain {
+		t.Errorf("expected abstain for unmatched command, got %s", v.Decision)
 	}
 }
 
@@ -109,12 +97,12 @@ func TestPreconditionMatches(t *testing.T) {
 		},
 	}, "main\n")
 
-	out, err := eng.Evaluate(bashInput("git push"))
+	v, err := eng.Evaluate(bashInput("git push"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
-		t.Error("expected deny when on main branch")
+	if v.Decision != canonical.Deny {
+		t.Errorf("expected deny when on main branch, got %s", v.Decision)
 	}
 }
 
@@ -130,12 +118,12 @@ func TestPreconditionDoesNotMatch(t *testing.T) {
 		},
 	}, "feature-branch\n")
 
-	out, err := eng.Evaluate(bashInput("git push"))
+	v, err := eng.Evaluate(bashInput("git push"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != nil {
-		t.Error("expected abstain when on feature branch")
+	if v.Decision != canonical.Abstain {
+		t.Errorf("expected abstain when on feature branch, got %s", v.Decision)
 	}
 }
 
@@ -164,12 +152,12 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 			return "feature-branch\n", nil
 		})
 
-		out, err := eng.Evaluate(bashInput("cd /other/repo && git push -u origin feature-branch"))
+		v, err := eng.Evaluate(bashInput("cd /other/repo && git push -u origin feature-branch"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out != nil {
-			t.Error("expected abstain (no deny) when cd'd repo is on feature branch")
+		if v.Decision != canonical.Abstain {
+			t.Errorf("expected abstain (no deny) when cd'd repo is on feature branch, got %s", v.Decision)
 		}
 	})
 
@@ -182,12 +170,12 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 			return "main\n", nil
 		})
 
-		out, err := eng.Evaluate(bashInput("cd /other/repo && git push"))
+		v, err := eng.Evaluate(bashInput("cd /other/repo && git push"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
-			t.Error("expected deny when cd'd repo is on main")
+		if v.Decision != canonical.Deny {
+			t.Errorf("expected deny when cd'd repo is on main, got %s", v.Decision)
 		}
 	})
 
@@ -200,12 +188,12 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 			return "main\n", nil
 		})
 
-		out, err := eng.Evaluate(bashInput("git push"))
+		v, err := eng.Evaluate(bashInput("git push"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
-			t.Error("expected deny when CWD is on main")
+		if v.Decision != canonical.Deny {
+			t.Errorf("expected deny when CWD is on main, got %s", v.Decision)
 		}
 	})
 }
@@ -322,65 +310,53 @@ func TestHeredocContentDoesNotTriggerDeny(t *testing.T) {
 	tests := []struct {
 		name string
 		cmd  string
-		want *protocol.Decision
+		want canonical.Decision
 	}{
 		{
 			name: "commit message mentioning rm -rf",
 			cmd:  "git commit -m \"$(cat <<'EOF'\nfeat: allow rm -rf on build dirs\nEOF\n)\"",
-			want: ptr(protocol.Allow),
+			want: canonical.Allow,
 		},
 		{
 			name: "PR body mentioning DROP TABLE",
 			cmd:  "gh pr create --body \"$(cat <<'EOF'\nThis fixes the DROP TABLE issue\nEOF\n)\"",
-			want: ptr(protocol.Allow),
+			want: canonical.Allow,
 		},
 		{
 			name: "commit message mentioning git reset --hard",
 			cmd:  "git commit -m \"$(cat <<'EOF'\nRevert git reset --hard behavior\nEOF\n)\"",
-			want: ptr(protocol.Allow),
+			want: canonical.Allow,
 		},
 		{
 			name: "actual rm -rf still denied",
 			cmd:  "rm -rf /tmp/stuff",
-			want: ptr(protocol.Deny),
+			want: canonical.Deny,
 		},
 		{
 			name: "bash heredoc with rm -rf denied",
 			cmd:  "bash <<'EOF'\nrm -rf /\nEOF",
-			want: ptr(protocol.Deny),
+			want: canonical.Deny,
 		},
 		{
 			name: "sh heredoc with git reset --hard denied",
 			cmd:  "sh <<'EOF'\ngit reset --hard\nEOF",
-			want: ptr(protocol.Deny),
+			want: canonical.Deny,
 		},
 		{
 			name: "python heredoc with DROP TABLE no db tool - no deny",
 			cmd:  "python3 <<'EOF'\nDROP TABLE users\nEOF",
-			want: nil, // no database CLI tool in command, SQL rule doesn't match
+			want: canonical.Abstain, // no database CLI tool in command, SQL rule doesn't match
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := eng.Evaluate(bashInput(tt.cmd))
+			v, err := eng.Evaluate(bashInput(tt.cmd))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tt.want == nil {
-				if out != nil {
-					t.Errorf("expected abstain, got %s", out.HookSpecificOutput.PermissionDecision)
-				}
-				return
-			}
-			if out == nil {
-				t.Fatalf("expected %s, got abstain", *tt.want)
-			}
-			if out.HookSpecificOutput.PermissionDecision != *tt.want {
-				t.Errorf("got %s (%s), want %s",
-					out.HookSpecificOutput.PermissionDecision,
-					out.HookSpecificOutput.PermissionDecisionReason,
-					*tt.want)
+			if v.Decision != tt.want {
+				t.Errorf("got %s (%s), want %s", v.Decision, v.Reason, tt.want)
 			}
 		})
 	}
@@ -392,22 +368,22 @@ func TestToolMatching(t *testing.T) {
 	})
 
 	for _, tool := range []string{"Read", "Glob", "Grep"} {
-		out, err := eng.Evaluate(toolInput(tool))
+		v, err := eng.Evaluate(toolInput(tool))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Allow {
-			t.Errorf("expected allow for tool %s", tool)
+		if v.Decision != canonical.Allow {
+			t.Errorf("expected allow for tool %s, got %s", tool, v.Decision)
 		}
 	}
 
 	// Bash should not match.
-	out, err := eng.Evaluate(bashInput("ls"))
+	v, err := eng.Evaluate(bashInput("ls"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != nil {
-		t.Error("expected abstain for Bash (not in Read|Glob|Grep)")
+	if v.Decision != canonical.Abstain {
+		t.Errorf("expected abstain for Bash (not in Read|Glob|Grep), got %s", v.Decision)
 	}
 }
 
@@ -430,22 +406,22 @@ func TestCredentialFileDeny(t *testing.T) {
 	}
 
 	for _, p := range denyPaths {
-		out, err := eng.Evaluate(readInput(p))
+		v, err := eng.Evaluate(readInput(p))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
-			t.Errorf("expected deny for Read %s, got %v", p, out)
+		if v.Decision != canonical.Deny {
+			t.Errorf("expected deny for Read %s, got %s", p, v.Decision)
 		}
 	}
 
 	// Safe file should be allowed.
-	out, err := eng.Evaluate(readInput("/project/src/main.go"))
+	v, err := eng.Evaluate(readInput("/project/src/main.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Allow {
-		t.Error("expected allow for main.go")
+	if v.Decision != canonical.Allow {
+		t.Errorf("expected allow for main.go, got %s", v.Decision)
 	}
 }
 
@@ -494,98 +470,82 @@ func TestDefaultRules(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input *protocol.HookInput
-		want  *protocol.Decision // nil = abstain
+		input *canonical.ToolCall
+		want  canonical.Decision
 	}{
 		// Deny cases
-		{"deny git reset --hard", bashInput("git reset --hard HEAD~1"), ptr(protocol.Deny)},
-		{"deny git clean -fd", bashInput("git clean -fd"), ptr(protocol.Deny)},
-		{"deny git push --force", bashInput("git push --force origin feature"), ptr(protocol.Deny)},
-		{"deny git push -f", bashInput("git push -f origin feature"), ptr(protocol.Deny)},
-		{"deny git commit --amend", bashInput("git commit --amend -m 'fix'"), ptr(protocol.Deny)},
-		{"deny git push origin main", bashInput("git push origin main"), ptr(protocol.Deny)},
-		{"deny git push origin master", bashInput("git push origin master"), ptr(protocol.Deny)},
-		{"deny git branch -D", bashInput("git branch -D feature-branch"), ptr(protocol.Deny)},
-		{"deny rm -rf", bashInput("rm -rf /tmp/stuff"), ptr(protocol.Deny)},
-		{"deny rm -r", bashInput("rm -r dir/"), ptr(protocol.Deny)},
-		{"deny rm --recursive", bashInput("rm --recursive dir/"), ptr(protocol.Deny)},
-		{"allow rm files in dist/", bashInput("rm dist/main.js dist/app.wasm"), ptr(protocol.Allow)},
-		{"allow rm files in build/", bashInput("rm build/output.bin"), ptr(protocol.Allow)},
-		{"deny sed", bashInput("sed -i 's/foo/bar/' file.txt"), ptr(protocol.Deny)},
-		{"deny awk", bashInput("awk '{print $1}' file.txt"), ptr(protocol.Deny)},
-		{"deny DROP TABLE via psql", bashInput("psql -c 'DROP TABLE users'"), ptr(protocol.Deny)},
-		{"deny TRUNCATE via mysql", bashInput("mysql -e 'TRUNCATE TABLE logs'"), ptr(protocol.Deny)},
-		{"deny DELETE FROM via sqlite3", bashInput("sqlite3 db.sqlite 'DELETE FROM users'"), ptr(protocol.Deny)},
-		{"deny DROP piped to psql", bashInput("echo 'DROP TABLE users' | psql"), ptr(protocol.Deny)},
-		{"allow drop in commit msg", bashInput("git commit -m 'fix: drop old feature'"), ptr(protocol.Allow)},
-		{"allow drop in echo", bashInput("echo 'drop this thing'"), ptr(protocol.Allow)},
-		{"deny cat .env", bashInput("cat .env"), ptr(protocol.Deny)},
-		{"deny read .env", readInput("/project/.env"), ptr(protocol.Deny)},
-		{"deny read id_rsa", readInput("/home/user/.ssh/id_rsa"), ptr(protocol.Deny)},
-		{"deny read key.json", readInput("/tmp/service-key.json"), ptr(protocol.Deny)},
+		{"deny git reset --hard", bashInput("git reset --hard HEAD~1"), canonical.Deny},
+		{"deny git clean -fd", bashInput("git clean -fd"), canonical.Deny},
+		{"deny git push --force", bashInput("git push --force origin feature"), canonical.Deny},
+		{"deny git push -f", bashInput("git push -f origin feature"), canonical.Deny},
+		{"deny git commit --amend", bashInput("git commit --amend -m 'fix'"), canonical.Deny},
+		{"deny git push origin main", bashInput("git push origin main"), canonical.Deny},
+		{"deny git push origin master", bashInput("git push origin master"), canonical.Deny},
+		{"deny git branch -D", bashInput("git branch -D feature-branch"), canonical.Deny},
+		{"deny rm -rf", bashInput("rm -rf /tmp/stuff"), canonical.Deny},
+		{"deny rm -r", bashInput("rm -r dir/"), canonical.Deny},
+		{"deny rm --recursive", bashInput("rm --recursive dir/"), canonical.Deny},
+		{"allow rm files in dist/", bashInput("rm dist/main.js dist/app.wasm"), canonical.Allow},
+		{"allow rm files in build/", bashInput("rm build/output.bin"), canonical.Allow},
+		{"deny sed", bashInput("sed -i 's/foo/bar/' file.txt"), canonical.Deny},
+		{"deny awk", bashInput("awk '{print $1}' file.txt"), canonical.Deny},
+		{"deny DROP TABLE via psql", bashInput("psql -c 'DROP TABLE users'"), canonical.Deny},
+		{"deny TRUNCATE via mysql", bashInput("mysql -e 'TRUNCATE TABLE logs'"), canonical.Deny},
+		{"deny DELETE FROM via sqlite3", bashInput("sqlite3 db.sqlite 'DELETE FROM users'"), canonical.Deny},
+		{"deny DROP piped to psql", bashInput("echo 'DROP TABLE users' | psql"), canonical.Deny},
+		{"allow drop in commit msg", bashInput("git commit -m 'fix: drop old feature'"), canonical.Allow},
+		{"allow drop in echo", bashInput("echo 'drop this thing'"), canonical.Allow},
+		{"deny cat .env", bashInput("cat .env"), canonical.Deny},
+		{"deny read .env", readInput("/project/.env"), canonical.Deny},
+		{"deny read id_rsa", readInput("/home/user/.ssh/id_rsa"), canonical.Deny},
+		{"deny read key.json", readInput("/tmp/service-key.json"), canonical.Deny},
 
 		// Allow cases
-		{"allow git status", bashInput("git status"), ptr(protocol.Allow)},
-		{"allow git add", bashInput("git add -A"), ptr(protocol.Allow)},
-		{"allow git commit", bashInput("git commit -m 'test'"), ptr(protocol.Allow)},
-		{"allow git log", bashInput("git log --oneline"), ptr(protocol.Allow)},
-		{"allow git push feature", bashInput("git push origin feature-branch"), ptr(protocol.Allow)},
-		{"allow gh pr list", bashInput("gh pr list"), ptr(protocol.Allow)},
-		{"allow docker build", bashInput("docker build -t app ."), ptr(protocol.Allow)},
-		{"allow go test", bashInput("go test ./..."), ptr(protocol.Allow)},
-		{"allow go build", bashInput("go build ./cmd/..."), ptr(protocol.Allow)},
-		{"allow make", bashInput("make build"), ptr(protocol.Allow)},
-		{"allow pnpm install", bashInput("pnpm install"), ptr(protocol.Allow)},
-		{"allow ls", bashInput("ls -la"), ptr(protocol.Allow)},
-		{"allow find", bashInput("find . -name '*.go'"), ptr(protocol.Allow)},
-		{"allow curl", bashInput("curl https://example.com"), ptr(protocol.Allow)},
-		{"allow openssl", bashInput("openssl rand -hex 32"), ptr(protocol.Allow)},
-		{"allow timeout", bashInput("timeout 120 go test ./..."), ptr(protocol.Allow)},
-		{"allow python", bashInput("python3 -m pytest"), ptr(protocol.Allow)},
-		{"allow pytest", bashInput("pytest -xvs tests/"), ptr(protocol.Allow)},
-		{"allow uv", bashInput("uv pip install requests"), ptr(protocol.Allow)},
-		{"allow cargo", bashInput("cargo build --release"), ptr(protocol.Allow)},
-		{"allow terraform", bashInput("terraform plan"), ptr(protocol.Allow)},
-		{"allow jq", bashInput("jq '.name' package.json"), ptr(protocol.Allow)},
-		{"allow node", bashInput("node server.js"), ptr(protocol.Allow)},
+		{"allow git status", bashInput("git status"), canonical.Allow},
+		{"allow git add", bashInput("git add -A"), canonical.Allow},
+		{"allow git commit", bashInput("git commit -m 'test'"), canonical.Allow},
+		{"allow git log", bashInput("git log --oneline"), canonical.Allow},
+		{"allow git push feature", bashInput("git push origin feature-branch"), canonical.Allow},
+		{"allow gh pr list", bashInput("gh pr list"), canonical.Allow},
+		{"allow docker build", bashInput("docker build -t app ."), canonical.Allow},
+		{"allow go test", bashInput("go test ./..."), canonical.Allow},
+		{"allow go build", bashInput("go build ./cmd/..."), canonical.Allow},
+		{"allow make", bashInput("make build"), canonical.Allow},
+		{"allow pnpm install", bashInput("pnpm install"), canonical.Allow},
+		{"allow ls", bashInput("ls -la"), canonical.Allow},
+		{"allow find", bashInput("find . -name '*.go'"), canonical.Allow},
+		{"allow curl", bashInput("curl https://example.com"), canonical.Allow},
+		{"allow openssl", bashInput("openssl rand -hex 32"), canonical.Allow},
+		{"allow timeout", bashInput("timeout 120 go test ./..."), canonical.Allow},
+		{"allow python", bashInput("python3 -m pytest"), canonical.Allow},
+		{"allow pytest", bashInput("pytest -xvs tests/"), canonical.Allow},
+		{"allow uv", bashInput("uv pip install requests"), canonical.Allow},
+		{"allow cargo", bashInput("cargo build --release"), canonical.Allow},
+		{"allow terraform", bashInput("terraform plan"), canonical.Allow},
+		{"allow jq", bashInput("jq '.name' package.json"), canonical.Allow},
+		{"allow node", bashInput("node server.js"), canonical.Allow},
 
 		// Allow non-Bash tools
-		{"allow Read", readInput("/project/src/main.go"), ptr(protocol.Allow)},
-		{"allow Glob", toolInput("Glob"), ptr(protocol.Allow)},
-		{"allow Grep", toolInput("Grep"), ptr(protocol.Allow)},
-		{"allow Edit", toolInput("Edit"), ptr(protocol.Allow)},
-		{"allow Write", toolInput("Write"), ptr(protocol.Allow)},
-		{"allow Agent", toolInput("Agent"), ptr(protocol.Allow)},
+		{"allow Read", readInput("/project/src/main.go"), canonical.Allow},
+		{"allow Glob", toolInput("Glob"), canonical.Allow},
+		{"allow Grep", toolInput("Grep"), canonical.Allow},
+		{"allow Edit", toolInput("Edit"), canonical.Allow},
+		{"allow Write", toolInput("Write"), canonical.Allow},
+		{"allow Agent", toolInput("Agent"), canonical.Allow},
 
 		// Abstain cases (unrecognised commands)
-		{"abstain unknown", bashInput("some-exotic-tool --flag"), nil},
+		{"abstain unknown", bashInput("some-exotic-tool --flag"), canonical.Abstain},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := eng.Evaluate(tt.input)
+			v, err := eng.Evaluate(tt.input)
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}
-			if tt.want == nil {
-				if out != nil {
-					t.Errorf("expected abstain, got %s: %s",
-						out.HookSpecificOutput.PermissionDecision,
-						out.HookSpecificOutput.PermissionDecisionReason)
-				}
-				return
-			}
-			if out == nil {
-				t.Fatalf("expected %s, got abstain", *tt.want)
-			}
-			if out.HookSpecificOutput.PermissionDecision != *tt.want {
-				t.Errorf("got %s (%s), want %s",
-					out.HookSpecificOutput.PermissionDecision,
-					out.HookSpecificOutput.PermissionDecisionReason,
-					*tt.want)
+			if v.Decision != tt.want {
+				t.Errorf("got %s (%s), want %s", v.Decision, v.Reason, tt.want)
 			}
 		})
 	}
 }
-
-func ptr(d protocol.Decision) *protocol.Decision { return &d }

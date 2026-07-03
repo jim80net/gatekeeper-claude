@@ -105,6 +105,102 @@ func Uninstall() error {
 	return nil
 }
 
+// InstallGrok registers a grok-native global blocking hook at
+// ~/.grok/hooks/gatekeeper.json. The schema fields
+// (matcher/enabled/command_raw/timeout_ms) are grok-native (from the grok
+// binary's embedded 10-hooks.md). The project folder must be /hooks-trust'd for
+// grok to execute the hook. binaryPath is the absolute path to the installed
+// gatekeeper binary.
+func InstallGrok(binaryPath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	hookDir := filepath.Join(homeDir, ".grok", "hooks")
+	if err := os.MkdirAll(hookDir, 0755); err != nil {
+		return fmt.Errorf("creating %s: %w", hookDir, err)
+	}
+	hookPath := filepath.Join(hookDir, "gatekeeper.json")
+
+	if err := backup(hookPath); err != nil {
+		return err
+	}
+
+	hook := map[string]interface{}{
+		"matcher":     "",
+		"enabled":     true,
+		"command_raw": binaryPath + " --harness grok",
+		"timeout_ms":  5000,
+	}
+	if err := writeJSONFile(hookPath, hook); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "grok hook installed in %s\n", hookPath)
+	fmt.Fprintf(os.Stderr, "Run /hooks-trust on each grok project folder so the hook executes.\n")
+	return nil
+}
+
+// InstallCodex registers a codex PreToolUse hook in <projectDir>/.codex/hooks.json.
+// The structure is the Claude-shaped hooks config verified against a real
+// .codex/hooks.json and the codex binary's embedded schema. Codex's support for
+// a GLOBAL hooks config is not yet verified, so this writes the project-level
+// file; run it per project until that is confirmed. An empty projectDir defaults
+// to the current directory.
+func InstallCodex(binaryPath, projectDir string) error {
+	if projectDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("cannot determine current directory: %w", err)
+		}
+		projectDir = wd
+	}
+	hookDir := filepath.Join(projectDir, ".codex")
+	if err := os.MkdirAll(hookDir, 0755); err != nil {
+		return fmt.Errorf("creating %s: %w", hookDir, err)
+	}
+	hookPath := filepath.Join(hookDir, "hooks.json")
+
+	if err := backup(hookPath); err != nil {
+		return err
+	}
+
+	hookEntry := map[string]interface{}{
+		"type":          "command",
+		"command":       binaryPath + " --harness codex",
+		"timeout":       10,
+		"statusMessage": "Checking permissions...",
+	}
+	config := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"hooks": []interface{}{hookEntry},
+				},
+			},
+		},
+	}
+	if err := writeJSONFile(hookPath, config); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "codex hook installed in %s\n", hookPath)
+	fmt.Fprintf(os.Stderr, "Grant hook trust (persisted, or --dangerously-bypass-hook-trust) for automation.\n")
+	return nil
+}
+
+// writeJSONFile atomically writes v as indented JSON to path.
+func writeJSONFile(path string, v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshalling JSON: %w", err)
+	}
+	data = append(data, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
 func settingsFilePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

@@ -1,15 +1,14 @@
-// Package protocol handles the Claude Code hook JSON wire format.
+// Package protocol handles the Claude Code hook JSON wire format. This is the
+// Claude-native wire, shared by the claude and codex adapters (codex's
+// PreToolUse hook uses the same hookSpecificOutput shape). Harness-agnostic
+// core types live in internal/canonical.
 package protocol
 
 import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 )
-
-// DebugEnabled controls whether Debugf writes to stderr.
-var DebugEnabled bool
 
 // HookInput represents the JSON sent to the hook on stdin.
 type HookInput struct {
@@ -113,11 +112,4 @@ func ExtractInputString(toolName string, raw json.RawMessage) string {
 		return toolName
 	}
 	return string(raw)
-}
-
-// Debugf writes debug output to stderr when DebugEnabled is true.
-func Debugf(format string, args ...interface{}) {
-	if DebugEnabled {
-		fmt.Fprintf(os.Stderr, "[gatekeeper] "+format+"\n", args...)
-	}
 }
