@@ -43,9 +43,14 @@ on_error tests. The engine and config need no changes — that is the point of t
 ### Ship-gates (codex + grok now LIVE-VERIFIED)
 
 Both variant adapters are live-verified (2026-07-03):
-- **codex** (0.142.5): `permissionDecision:"deny"` blocks under `approval_policy=never`;
-  silent abstain falls through to native policy; both `~/.codex/hooks.json` (global) and
-  project `.codex/hooks.json` are read.
+- **codex** (0.142.5; ALLOW-value fix 2026-07-08 re-confirmed against 0.143.0):
+  `permissionDecision:"deny"` blocks under `approval_policy=never`; silent abstain
+  falls through to native policy; both `~/.codex/hooks.json` (global) and project
+  `.codex/hooks.json` are read. **codex's PreToolUse handler rejects an explicit
+  `permissionDecision:"allow"`** (and `"ask"`) as unsupported — confirmed via the
+  literal error strings in the codex-cli binary itself — despite both being legal
+  members of the shared wire enum's JSON schema. The codex adapter therefore never
+  emits an explicit allow; an ALLOW verdict encodes identically to abstain.
 - **grok** (0.2.82): a global `~/.grok/hooks/` PreToolUse hook emitting grok-native
   `{"decision":"deny"}` + exit 2 blocks a tool call under `--permission-mode
   bypassPermissions`; abstain (exit 1) falls through. The verified hook stdin schema is
