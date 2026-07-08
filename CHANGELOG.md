@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/jim80net/claude-gatekeeper/compare/v1.3.0...v1.3.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **codex:** never emit unsupported permissionDecision:allow ([fa2c910](https://github.com/jim80net/claude-gatekeeper/commit/fa2c91002805eaaf054e7552f7615cc628101758))
+
 ## [1.3.0](https://github.com/jim80net/claude-gatekeeper/compare/v1.2.0...v1.3.0) (2026-07-03)
 
 
