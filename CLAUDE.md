@@ -56,6 +56,39 @@ Both variant adapters are live-verified (2026-07-03):
 See README "Harnesses" for the provenance. The grok schema was corrected from an earlier
 (wrong) inference by the live probe — a reminder to verify external wire shapes, not infer.
 
+## Self-merge defense — cubic-approval pilot (in progress, 2026-07-08)
+
+The gatekeeper hook cannot itself block "author == merger" self-merges: every
+desk in the fleet (grok/codex/claude alike) authenticates to GitHub as one
+shared account, so PR `author` and `mergedBy` are identical for every PR
+regardless of which desk actually did the work — a same-identity comparison
+at the hook layer would either deny every merge or catch nothing. This isn't
+a gatekeeper engine gap; the identity signal it would need doesn't exist at
+that layer.
+
+**The real fix lives at GitHub's branch-protection layer, not the hook:**
+GitHub's `required_approving_review_count` never counts a PR's own author's
+review toward the requirement — a hard platform guarantee, not a comparison
+we have to implement ourselves. Combined with a genuinely separate reviewer
+identity that can post a real `APPROVED` review, this closes the gap
+completely with zero gatekeeper code changes.
+
+**Pilot (this repo, before any fleet-wide rollout):**
+1. `cubic-dev-ai[bot]` (already installed and reviewing on this repo) is
+   configured, via cubic's own dashboard, to **Live** approval mode with a
+   **Low-risk only** policy — it posts a real GitHub approval only when it
+   finds zero issues and judges the change low-risk.
+2. This repo's branch protection sets `required_approving_review_count: 1`.
+3. Net effect: `gh pr merge` is refused by GitHub itself until cubic
+   independently approves — self-merge becomes structurally impossible, not
+   just discouraged by convention.
+
+Status: cubic dashboard toggle requested from the operator (owns the cubic
+account); branch-protection bump and live-PR verification follow once that
+lands. Fallback if Live mode misbehaves in practice: a small first-party CI
+bot with its own token posting real approvals after the systems-review/OCR
+gates pass — noted, not needed unless cubic's pilot fails.
+
 ## Plugin structure
 
 This project is a Claude Code plugin. Key files:
