@@ -44,8 +44,15 @@ func TestParseInputShellAlias(t *testing.T) {
 	}
 }
 
-// TestEncodeWire pins codex's Claude-compatible wire per decision. Abstain
-// emits no hookSpecificOutput and no top-level decision (design §4.3).
+// TestEncodeWire pins codex's per-decision wire.
+//
+// P0 regression coverage (2026-07-08): codex's PreToolUse handler rejects an
+// explicit permissionDecision:"allow" with a hard error — confirmed via the
+// literal error string extracted from the codex-cli 0.143.0 binary,
+// "PreToolUse hook returned unsupported permissionDecision:allow" — despite
+// "allow" being a schema-legal value of the shared wire enum. ALLOW must
+// therefore encode identically to ABSTAIN (no hookSpecificOutput, exit 0).
+// Only DENY is ever encoded explicitly.
 func TestEncodeWire(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -60,9 +67,15 @@ func TestEncodeWire(t *testing.T) {
 			wantCode: 0,
 		},
 		{
-			name:     "allow",
+			name:     "deny with empty reason falls back to a non-empty default",
+			verdict:  canonical.Verdict{Decision: canonical.Deny, Reason: ""},
+			wantOut:  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Denied by gatekeeper (no reason configured)"}}` + "\n",
+			wantCode: 0,
+		},
+		{
+			name:     "allow: NOT emitted explicitly — codex rejects permissionDecision:allow; encodes as abstain",
 			verdict:  canonical.Verdict{Decision: canonical.Allow, Reason: "ok"},
-			wantOut:  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"ok"}}` + "\n",
+			wantOut:  "",
 			wantCode: 0,
 		},
 		{
@@ -88,5 +101,28 @@ func TestEncodeWire(t *testing.T) {
 				t.Errorf("out = %q, want %q", buf.String(), tt.wantOut)
 			}
 		})
+	}
+}
+
+// TestEncodeNeverEmitsUnsupportedPermissionDecision is a blunt regression
+// guard: for every canonical.Decision value, codex's encoded output must
+// never contain the literal substring `"permissionDecision":"allow"` or
+// `"permissionDecision":"ask"` — both are confirmed-unsupported by codex's
+// own binary (see package doc). Only "deny" may appear.
+func TestEncodeNeverEmitsUnsupportedPermissionDecision(t *testing.T) {
+	a := codex.New()
+	decisions := []canonical.Decision{canonical.Allow, canonical.Deny, canonical.Abstain}
+	for _, d := range decisions {
+		var buf bytes.Buffer
+		if _, err := a.Encode(&buf, canonical.Verdict{Decision: d, Reason: "x"}); err != nil {
+			t.Fatalf("Encode(%v): %v", d, err)
+		}
+		out := buf.String()
+		if strings.Contains(out, `"permissionDecision":"allow"`) {
+			t.Errorf("decision=%v: encoded output contains unsupported permissionDecision:allow: %s", d, out)
+		}
+		if strings.Contains(out, `"permissionDecision":"ask"`) {
+			t.Errorf("decision=%v: encoded output contains unsupported permissionDecision:ask: %s", d, out)
+		}
 	}
 }
