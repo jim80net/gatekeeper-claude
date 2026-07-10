@@ -22,3 +22,4 @@ Thumbs.db
 # Go test artifacts
 *.out
 cover.out
+.gatekeeper/
