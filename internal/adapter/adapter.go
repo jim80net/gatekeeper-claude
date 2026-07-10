@@ -26,7 +26,7 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/claude"
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/codex"
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/grok"
-	"github.com/jim80net/claude-gatekeeper/internal/canonical"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 // Adapter is the per-harness wire translator SPI.
