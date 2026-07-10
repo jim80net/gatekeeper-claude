@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/grok"
-	"github.com/jim80net/claude-gatekeeper/internal/canonical"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 // TestParseInputLivePayload is the golden regression for grok's REAL hook stdin,

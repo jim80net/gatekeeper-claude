@@ -9,6 +9,8 @@ install and fleet-dogfood compatibility — see [COMPAT.md](./COMPAT.md).
 
 ## Architecture — harness-agnostic core + per-harness adapters
 
+> Core packages live in module github.com/jim80net/gatekeeper-core (Phase 1 extract).
+
 One policy (the TOML rules) is evaluated by a harness-agnostic engine over a
 canonical tool call; thin per-harness adapters translate each harness's native
 hook wire in and out. The target harness is chosen by `--harness`

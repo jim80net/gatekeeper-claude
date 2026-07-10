@@ -40,7 +40,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jim80net/claude-gatekeeper/internal/canonical"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 // Grok exit codes for blocking hooks (design §2.3b).

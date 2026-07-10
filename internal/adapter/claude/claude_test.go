@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/claude"
-	"github.com/jim80net/claude-gatekeeper/internal/canonical"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 func TestParseInput(t *testing.T) {

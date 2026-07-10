@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
-	"github.com/jim80net/claude-gatekeeper/internal/canonical"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 // writeHomeConfig sets HOME to a temp dir containing ~/.claude/gatekeeper.toml
