@@ -136,7 +136,7 @@ decision          = "deny"
 reason            = "Implicit push to main/master"
 ```
 
-The `precondition` command runs only when `tool` and `input` both match. It has a 5-second timeout.
+The `precondition` command runs only when `tool` and `input` both match. It has a 5-second timeout. The shell inherits the process environment plus **`GATEKEEPER_INPUT`**, set to the (heredoc-stripped) tool input under evaluation. That lets preconditions inspect the command itself — for example, parse `gh pr merge --repo OWNER/REPO` and compare it to the worktree's authority domain (`git remote get-url origin`, or an optional `.gatekeeper/domain` file). See `scripts/merge-domain-check.sh` for a fail-closed reference implementation used by multi-agent fleets (lead seat + domain-scoped merge).
 
 ### Env-prefix aware variants
 

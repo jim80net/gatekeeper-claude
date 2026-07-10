@@ -125,6 +125,28 @@ decision          = "deny"
 reason            = "Implicit push to protected branch (currently on main/master)"
 
 # =============================================================================
+# OPTIONAL — Domain-scoped merge (multi-agent fleets / flotilla#551)
+#
+# Lead seats with a `.gatekeeper/lead` marker may still run
+# `gh pr merge --repo OTHER` if the deny rule only checks the marker in CWD.
+# Pair a lead check with target-repo domain scoping via GATEKEEPER_INPUT
+# (exported by the engine to every precondition shell) and
+# scripts/merge-domain-check.sh:
+#
+#   [[rules]]
+#   tool  = 'Bash'
+#   input = 'gh\s+pr\s+merge\b'
+#   precondition = '/path/to/merge-domain-check.sh'
+#   precondition_match = '^(EXEC|FOREIGN|UNPARSEABLE|NODOMAIN)$'
+#   decision = 'deny'
+#   reason = 'Merge outside seat authority domain or non-lead seat'
+#
+# Domain = lines in .gatekeeper/domain (owner/name), else git remote origin.
+# Fail-closed on unparseable explicit targets. Not enabled in the shipped
+# default rules (single-user installs need no domain split).
+# =============================================================================
+
+# =============================================================================
 # ALLOW — Remove files in build output directories (non-recursive)
 #
 # Allows: rm dist/main.js, rm build/app.wasm, etc.

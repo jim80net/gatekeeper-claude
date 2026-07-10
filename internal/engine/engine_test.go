@@ -36,7 +36,7 @@ func newEngine(t *testing.T, rules []config.Rule) *engine.Engine {
 func newEngineWithPrecondition(t *testing.T, rules []config.Rule, cmdOutput string) *engine.Engine {
 	t.Helper()
 	eng := newEngine(t, rules)
-	eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+	eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 		return cmdOutput, nil
 	})
 	return eng
@@ -144,7 +144,7 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 
 	t.Run("cd to repo on feature branch allows push", func(t *testing.T) {
 		eng := newEngine(t, rules)
-		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+		eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 			// Verify the cd prefix was prepended to the precondition.
 			if command != "cd /other/repo && git branch --show-current" {
 				t.Errorf("expected cd-prefixed precondition, got: %s", command)
@@ -163,7 +163,7 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 
 	t.Run("cd to repo on main still denies push", func(t *testing.T) {
 		eng := newEngine(t, rules)
-		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+		eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 			if command != "cd /other/repo && git branch --show-current" {
 				t.Errorf("expected cd-prefixed precondition, got: %s", command)
 			}
@@ -181,7 +181,7 @@ func TestPreconditionWithCDPrefix(t *testing.T) {
 
 	t.Run("no cd prefix keeps original behavior", func(t *testing.T) {
 		eng := newEngine(t, rules)
-		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+		eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 			if command != "git branch --show-current" {
 				t.Errorf("expected bare precondition, got: %s", command)
 			}
@@ -463,7 +463,7 @@ func TestDefaultRules(t *testing.T) {
 	}
 
 	// Override precondition exec so tests don't shell out.
-	eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+	eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 		// Default: not on main.
 		return "feature-branch\n", nil
 	})
@@ -547,5 +547,46 @@ func TestDefaultRules(t *testing.T) {
 				t.Errorf("got %s (%s), want %s", v.Decision, v.Reason, tt.want)
 			}
 		})
+	}
+}
+
+// TestPreconditionReceivesGatekeeperInput verifies the engine exports the
+// tool input to precondition shells as GATEKEEPER_INPUT (required for
+// domain-scoped merge checks that parse --repo against the worktree remote).
+func TestPreconditionReceivesGatekeeperInput(t *testing.T) {
+	// Real executor — do not stub SetExecCommand.
+	eng := newEngine(t, []config.Rule{
+		{
+			Tool:              "Bash",
+			Input:             `gh\s+pr\s+merge\b`,
+			Precondition:      `printf "%s\n" "$GATEKEEPER_INPUT"`,
+			PreconditionMatch: `jim80net/flotilla`,
+			Decision:          "deny",
+			Reason:            "foreign repo in input",
+		},
+	})
+
+	v, err := eng.Evaluate(&canonical.ToolCall{
+		Tool:        canonical.ToolBash,
+		InputString: "gh pr merge 1 --repo jim80net/flotilla",
+		CWD:         "/tmp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Decision != canonical.Deny {
+		t.Fatalf("want deny when GATEKEEPER_INPUT carries --repo target, got %s reason=%q", v.Decision, v.Reason)
+	}
+
+	v2, err := eng.Evaluate(&canonical.ToolCall{
+		Tool:        canonical.ToolBash,
+		InputString: "gh pr merge 1 --squash",
+		CWD:         "/tmp",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v2.Decision != canonical.Abstain {
+		t.Fatalf("want abstain when no foreign marker in input, got %s", v2.Decision)
 	}
 }

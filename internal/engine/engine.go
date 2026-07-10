@@ -9,6 +9,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -34,11 +35,14 @@ type Engine struct {
 	rules []CompiledRule
 	debug bool
 	// execCommand is overridable for testing preconditions.
-	execCommand func(ctx context.Context, cwd, command string) (string, error)
+	// toolInput is the (heredoc-stripped) tool input string, also exposed to
+	// the shell as GATEKEEPER_INPUT so preconditions can inspect the command
+	// (e.g. parse --repo against the worktree's authority domain).
+	execCommand func(ctx context.Context, cwd, command, toolInput string) (string, error)
 }
 
 // SetExecCommand overrides the shell executor (used in tests).
-func (e *Engine) SetExecCommand(fn func(ctx context.Context, cwd, command string) (string, error)) {
+func (e *Engine) SetExecCommand(fn func(ctx context.Context, cwd, command, toolInput string) (string, error)) {
 	e.execCommand = fn
 }
 
@@ -137,9 +141,10 @@ func (e *Engine) Evaluate(tc *canonical.ToolCall) (canonical.Verdict, error) {
 			continue
 		}
 
-		// Check precondition if present.
+		// Check precondition if present. matchStr (heredoc-stripped for Bash)
+		// is exported to the shell as GATEKEEPER_INPUT.
 		if rule.PreconditionCmd != "" {
-			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, tc.CWD, cdPrefix) {
+			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, tc.CWD, cdPrefix, matchStr) {
 				if e.debug {
 					canonical.Debugf("  precondition failed: %s", rule.Reason)
 				}
@@ -175,7 +180,7 @@ func (e *Engine) Evaluate(tc *canonical.ToolCall) (canonical.Verdict, error) {
 	return canonical.Verdict{Decision: canonical.Abstain}, nil
 }
 
-func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd string, cdPrefix string) bool {
+func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd string, cdPrefix string, toolInput string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -186,7 +191,7 @@ func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd stri
 		effectiveCmd = cdPrefix + " " + cmd
 	}
 
-	output, err := e.execCommand(ctx, cwd, effectiveCmd)
+	output, err := e.execCommand(ctx, cwd, effectiveCmd, toolInput)
 	if err != nil {
 		if e.debug {
 			canonical.Debugf("  precondition cmd error: %v", err)
@@ -201,9 +206,16 @@ func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd stri
 	return matched
 }
 
-func defaultExecCommand(ctx context.Context, cwd, command string) (string, error) {
+// EnvGatekeeperInput is the environment variable set for every precondition
+// shell. Value is the (heredoc-stripped) tool input string under evaluation.
+const EnvGatekeeperInput = "GATEKEEPER_INPUT"
+
+func defaultExecCommand(ctx context.Context, cwd, command, toolInput string) (string, error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	cmd.Dir = cwd
+	// Always set GATEKEEPER_INPUT (even when empty) so precondition scripts
+	// can rely on the variable existing without inventing a second channel.
+	cmd.Env = append(os.Environ(), EnvGatekeeperInput+"="+toolInput)
 	out, err := cmd.Output()
 	return string(out), err
 }
