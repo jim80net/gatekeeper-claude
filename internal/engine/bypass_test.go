@@ -21,7 +21,7 @@ func defaultEngine(t *testing.T, currentBranch string) *engine.Engine {
 	if err != nil {
 		t.Fatalf("engine.New: %v", err)
 	}
-	eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+	eng.SetExecCommand(func(ctx context.Context, cwd, command, toolInput string) (string, error) {
 		return currentBranch + "\n", nil
 	})
 	return eng
