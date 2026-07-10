@@ -2,5 +2,5 @@ github.com/BurntSushi/toml v1.4.0 h1:kuoIxZQy2WRRk1pttg9asf+WVv6tWQuBNVmK8+nqPr0
 github.com/BurntSushi/toml v1.4.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/dlclark/regexp2 v1.11.4 h1:rPYF9/LECdNymJufQKmri9gV604RvvABwgOA8un7yAo=
 github.com/dlclark/regexp2 v1.11.4/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
-github.com/jim80net/gatekeeper-core v0.0.0-20260710233249-571cf8620ebb h1:7KvJTMKHHY4tHKlFFCWl5eokDd/QvkWZs1jC85n/DSg=
-github.com/jim80net/gatekeeper-core v0.0.0-20260710233249-571cf8620ebb/go.mod h1:WMAvEJf980He5tDCuCNvpXTVbs9tM6VAvbCfywulTTA=
+github.com/jim80net/gatekeeper-core v0.0.0-20260710233536-240fe2fad09c h1:0msNSZUiz3fbZMNawqngJ1+Oac+I+ZBQcGCnTrCbIow=
+github.com/jim80net/gatekeeper-core v0.0.0-20260710233536-240fe2fad09c/go.mod h1:WMAvEJf980He5tDCuCNvpXTVbs9tM6VAvbCfywulTTA=
