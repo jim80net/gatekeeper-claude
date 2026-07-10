@@ -17,7 +17,7 @@ if (Test-Path $Binary) {
 }
 
 # 2. Auto-download from GitHub Releases.
-$Repo = "jim80net/claude-gatekeeper"
+$Repo = "jim80net/gatekeeper-claude"
 $Asset = "claude-gatekeeper_windows_${Arch}.zip"
 $Url = "https://github.com/$Repo/releases/latest/download/$Asset"
 try {

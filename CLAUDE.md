@@ -1,7 +1,11 @@
-# claude-gatekeeper (product: agent-gatekeeper)
+# gatekeeper-claude (product: agent-gatekeeper)
 
 PreToolUse permission hook for coding agents — Claude Code, OpenAI Codex, xAI grok.
-Written in Go for fast startup. The binary/repo name is retained for install compat.
+Written in Go for fast startup.
+
+**Repo:** `jim80net/gatekeeper-claude` (renamed from `claude-gatekeeper`; old URLs
+redirect). **Binary / plugin id / Go module** still `claude-gatekeeper` for
+install and fleet-dogfood compatibility — see [COMPAT.md](./COMPAT.md).
 
 ## Architecture — harness-agnostic core + per-harness adapters
 

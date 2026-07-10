@@ -1,8 +1,14 @@
-# agent-gatekeeper
+# agent-gatekeeper (`gatekeeper-claude`)
 
 A fast PreToolUse permission hook for coding agents — [Claude Code](https://claude.com/claude-code), [OpenAI Codex CLI](https://github.com/openai/codex), and [xAI grok](https://x.ai) — that replaces glob-based permission arrays with PCRE2-compatible regex rules. One policy, enforced across every harness.
 
-> The product is **agent-gatekeeper**; the binary and repository keep the `claude-gatekeeper` name for install compatibility.
+> **Naming (2026-07-10):** the public GitHub repo is
+> [`jim80net/gatekeeper-claude`](https://github.com/jim80net/gatekeeper-claude)
+> (renamed from `claude-gatekeeper`; old URLs **301** to the new name).
+> The **binary**, Claude Code **plugin id**, and Go **module path** still use
+> `claude-gatekeeper` so fleet dogfood and existing installs keep working.
+> Full matrix: [COMPAT.md](./COMPAT.md). Product family (core + adapters):
+> [gatekeeper-flotilla](https://github.com/jim80net/gatekeeper-flotilla) charter.
 
 ## Why
 
@@ -56,19 +62,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PLUGIN_ROOT}/bin/ru
 ### Local development
 
 ```bash
-git clone https://github.com/jim80net/claude-gatekeeper.git
-cd claude-gatekeeper
+git clone https://github.com/jim80net/gatekeeper-claude.git
+cd gatekeeper-claude
 make build
 claude --plugin-dir .
 ```
 
+(`git clone …/claude-gatekeeper.git` still works via GitHub redirect.)
+
 ### From a GitHub release
 
-Download a pre-built archive from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), extract it, and point Claude Code at the extracted directory:
+Download a pre-built archive from [Releases](https://github.com/jim80net/gatekeeper-claude/releases), extract it, and point Claude Code at the extracted directory:
 
 ```bash
-claude --plugin-dir /path/to/claude-gatekeeper
+claude --plugin-dir /path/to/gatekeeper-claude
 ```
+
+Release **asset** filenames remain `claude-gatekeeper_${os}_${arch}.tar.gz` (binary name lag).
 
 ## How it works
 
