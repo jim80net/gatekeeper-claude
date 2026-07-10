@@ -54,8 +54,8 @@ import (
 	"io"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter/claude"
-	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/claude-gatekeeper/internal/protocol"
+	"github.com/jim80net/gatekeeper-core/canonical"
 )
 
 // toolAliases maps codex-native tool names that differ from the canonical

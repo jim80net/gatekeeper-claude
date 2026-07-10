@@ -28,11 +28,11 @@ import (
 	"path/filepath"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
+	"github.com/jim80net/claude-gatekeeper/internal/migrate"
+	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
 	"github.com/jim80net/gatekeeper-core/engine"
-	"github.com/jim80net/claude-gatekeeper/internal/migrate"
-	"github.com/jim80net/claude-gatekeeper/internal/setup"
 )
 
 var version = "dev"
