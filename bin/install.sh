@@ -4,7 +4,8 @@
 #   version defaults to "latest"
 set -e
 
-REPO="jim80net/claude-gatekeeper"
+# GitHub repo renamed 2026-07-10; binary/asset names still claude-gatekeeper.
+REPO="jim80net/gatekeeper-claude"
 VERSION="${1:-latest}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 

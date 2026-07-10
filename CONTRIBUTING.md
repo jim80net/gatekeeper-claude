@@ -1,10 +1,10 @@
-# Contributing to claude-gatekeeper
+# Contributing to gatekeeper-claude (agent-gatekeeper)
 
 ## Development setup
 
 ```bash
-git clone https://github.com/jim80net/claude-gatekeeper.git
-cd claude-gatekeeper
+git clone https://github.com/jim80net/gatekeeper-claude.git
+cd gatekeeper-claude
 make test
 ```
 
