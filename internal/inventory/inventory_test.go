@@ -78,6 +78,20 @@ func TestCollectExcludesStalePluginCacheVersions(t *testing.T) {
 	}
 }
 
+func TestCollectFlagsInstalledButUntrustedCodexHook(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "claude-gatekeeper")
+	writeFile(t, bin, "binary", 0755)
+	writeHook(t, filepath.Join(home, ".codex", "hooks.json"), bin+" --harness codex")
+	report, err := Collect(Options{Home: home, ExpectedBinary: bin, VersionProbe: func(string) (string, error) { return "v", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK || len(report.Surfaces) != 1 || !contains(report.Surfaces[0].Drift, "trust: hook is installed but untrusted; Codex will silently skip it") {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestCollectExcludesForeignPluginRunWrapper(t *testing.T) {
 	home := t.TempDir()
 	foreign := filepath.Join(home, ".claude", "plugins", "cache", "market", "foreign", "1.0.0")

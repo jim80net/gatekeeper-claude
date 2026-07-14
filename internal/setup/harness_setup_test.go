@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jim80net/claude-gatekeeper/internal/codextrust"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 )
 
@@ -51,11 +52,11 @@ func TestInstallGrok(t *testing.T) {
 }
 
 func TestInstallCodexProject(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
 	projectDir := t.TempDir()
 
-	if err := setup.InstallCodex("/usr/local/bin/gatekeeper", projectDir); err != nil {
-		t.Fatalf("InstallCodex: %v", err)
-	}
+	requireCodexTrustFailure(t, setup.InstallCodex("/usr/local/bin/gatekeeper", projectDir), "untrusted")
 
 	assertCodexHook(t, filepath.Join(projectDir, ".codex", "hooks.json"))
 }
@@ -66,9 +67,7 @@ func TestInstallCodexGlobal(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	if err := setup.InstallCodex("/usr/local/bin/gatekeeper", ""); err != nil {
-		t.Fatalf("InstallCodex global: %v", err)
-	}
+	requireCodexTrustFailure(t, setup.InstallCodex("/usr/local/bin/gatekeeper", ""), "untrusted")
 
 	assertCodexHook(t, filepath.Join(homeDir, ".codex", "hooks.json"))
 }
@@ -76,15 +75,15 @@ func TestInstallCodexGlobal(t *testing.T) {
 // TestInstallCodexPreservesExisting confirms an existing non-gatekeeper hook in
 // .codex/hooks.json survives a gatekeeper install (merge, not clobber).
 func TestInstallCodexPreservesExisting(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
 	projectDir := t.TempDir()
 	codexDir := filepath.Join(projectDir, ".codex")
 	os.MkdirAll(codexDir, 0755)
 	existing := `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"/opt/other-tool --run"}]}]}}`
 	os.WriteFile(filepath.Join(codexDir, "hooks.json"), []byte(existing), 0644)
 
-	if err := setup.InstallCodex("/usr/local/bin/claude-gatekeeper", projectDir); err != nil {
-		t.Fatalf("InstallCodex: %v", err)
-	}
+	requireCodexTrustFailure(t, setup.InstallCodex("/usr/local/bin/claude-gatekeeper", projectDir), "untrusted")
 
 	data, _ := os.ReadFile(filepath.Join(codexDir, "hooks.json"))
 	s := string(data)
@@ -93,6 +92,44 @@ func TestInstallCodexPreservesExisting(t *testing.T) {
 	}
 	if !strings.Contains(s, "claude-gatekeeper --harness codex") {
 		t.Error("gatekeeper hook was not added")
+	}
+}
+
+func TestInstallCodexTrustedAndHashDrift(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	const binary = "/usr/local/bin/gatekeeper"
+	command := binary + " --harness codex"
+	hookPath := filepath.Join(home, ".codex", "hooks.json")
+
+	requireCodexTrustFailure(t, setup.InstallCodex(binary, ""), "untrusted")
+	trust, err := codextrust.Inspect(home, hookPath, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := `[hooks.state."` + trust.Key + `"]
+trusted_hash = "` + trust.CurrentHash + `"
+`
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.InstallCodex(binary, ""); err != nil {
+		t.Fatalf("trusted InstallCodex: %v", err)
+	}
+
+	config = `[hooks.state."` + trust.Key + `"]
+trusted_hash = "sha256:stale"
+`
+	if err := os.WriteFile(filepath.Join(home, ".codex", "config.toml"), []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+	requireCodexTrustFailure(t, setup.InstallCodex(binary, ""), "modified")
+}
+
+func requireCodexTrustFailure(t *testing.T, err error, state string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), state) || !strings.Contains(err.Error(), "silently skip") {
+		t.Fatalf("InstallCodex error = %v, want fail-closed %s trust error", err, state)
 	}
 }
 

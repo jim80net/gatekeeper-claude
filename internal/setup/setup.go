@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/jim80net/claude-gatekeeper/internal/codextrust"
 )
 
 const hookCommand = "claude-gatekeeper"
@@ -170,7 +172,11 @@ func InstallCodex(binaryPath, projectDir string) error {
 		}
 		hookDir = filepath.Join(homeDir, ".codex")
 	} else {
-		hookDir = filepath.Join(projectDir, ".codex")
+		absoluteProjectDir, err := filepath.Abs(projectDir)
+		if err != nil {
+			return fmt.Errorf("resolving project directory: %w", err)
+		}
+		hookDir = filepath.Join(absoluteProjectDir, ".codex")
 	}
 	hookPath := filepath.Join(hookDir, "hooks.json")
 
@@ -212,7 +218,23 @@ func InstallCodex(binaryPath, projectDir string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "codex hook installed in %s\n", hookPath)
-	fmt.Fprintf(os.Stderr, "Grant hook trust (persisted, or --dangerously-bypass-hook-trust) for automation.\n")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("hook installed but cannot verify Codex trust: %w", err)
+	}
+	command := binaryPath + " --harness codex"
+	trust, err := codextrust.Inspect(homeDir, hookPath, command)
+	if err != nil {
+		return fmt.Errorf("hook installed but Codex trust verification failed: %w", err)
+	}
+	if !trust.Trusted() {
+		state := "untrusted"
+		if trust.TrustedHash != "" {
+			state = "modified (persisted trust hash does not match the installed hook)"
+		}
+		return fmt.Errorf("hook installed but Codex will silently skip it: %s; open Codex, run /hooks, approve the installed hook, then rerun setup, or launch vetted automation with --dangerously-bypass-hook-trust", state)
+	}
+	fmt.Fprintln(os.Stderr, "codex hook trust verified")
 	return nil
 }
 
