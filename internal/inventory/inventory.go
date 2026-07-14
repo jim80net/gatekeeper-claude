@@ -14,6 +14,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/jim80net/claude-gatekeeper/internal/codextrust"
 )
 
 const binaryName = "claude-gatekeeper"
@@ -304,6 +306,18 @@ func inspect(c candidate, command string, parsed parsedCommand, opts Options) Su
 	}
 	if expectedBinary != "" && !sameBinaryPath(s.BinaryPath, expectedBinary) {
 		s.Drift = append(s.Drift, fmt.Sprintf("binary: expected %s, got %s", expectedBinary, s.BinaryPath))
+	}
+	if c.kind == "codex-global" {
+		trust, err := codextrust.Inspect(opts.Home, c.path, command)
+		if err != nil {
+			s.Drift = append(s.Drift, "trust: "+err.Error())
+		} else if !trust.Trusted() {
+			if trust.TrustedHash == "" {
+				s.Drift = append(s.Drift, "trust: hook is installed but untrusted; Codex will silently skip it")
+			} else {
+				s.Drift = append(s.Drift, "trust: hook hash changed since approval; Codex will silently skip it")
+			}
+		}
 	}
 	if _, err := os.Stat(s.BinaryPath); err != nil {
 		s.Drift = append(s.Drift, "binary: "+err.Error())

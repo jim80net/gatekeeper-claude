@@ -41,6 +41,14 @@ claude-gatekeeper setup --harness codex               # writes ~/.codex/hooks.js
 claude-gatekeeper setup --harness codex --project-dir .  # writes ./.codex/hooks.json (project-scoped)
 ```
 
+Codex silently skips user-installed hooks until their exact normalized identity
+has persisted trust. To prevent an apparently successful but inert install,
+Codex setup writes the hook and then verifies its matching `trusted_hash` in
+`~/.codex/config.toml`. A trusted hook exits successfully. A new hook or a hook
+whose command/config changed exits nonzero with remediation: run `/hooks` in
+Codex, review and approve the installed hook, then rerun setup. Vetted non-interactive
+automation may instead launch Codex with `--dangerously-bypass-hook-trust`.
+
 ### Fleet hook inventory
 
 Use the read-only doctor command before changing an installed binary or hook:
@@ -58,6 +66,9 @@ It inventories live references in `~/.grok/hooks/gatekeeper.json`,
 manifests. For each surface it reports the configured or wrapper-resolved binary,
 the result of `claude-gatekeeper --version`, the selected harness, and drift from
 the running command's expected binary/version and the surface's required harness.
+For the global Codex surface, it also recomputes the current trust hash and
+reports missing or stale persisted trust as drift, because Codex otherwise skips
+that installed hook silently.
 Plugin `bin/run.sh` entries resolve to the plugin's adjacent
 `bin/claude-gatekeeper`; the doctor never executes the download/build wrapper.
 
@@ -75,7 +86,7 @@ discovery ships, those files remain a manual checklist item (for example, search
 known workspaces for both paths). Set `--min-surfaces` to the fleet's expected global count so missing or
 unparseable discovery cannot produce a successful migration gate.
 
-Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
+Grok requires the project folder to be `/hooks-trust`ed; Codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
 
 ## Install
 
