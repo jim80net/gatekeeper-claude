@@ -57,11 +57,11 @@ reason = "Destructive: git clean with force"
 
 [[rules]]
 tool   = 'Bash'
-input  = 'git\s+push\s+(-[a-zA-Z]*f|--force|--force-with-lease)'
+input  = '(?:^|[|;&]\s*)git\s+push\b[^|;&]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force(?:-with-lease)?(?:=\S+)?)(?=\s|$)'
 decision = "deny"
 reason = "Destructive: git force push"
 # env-prefix aware:
-# input = '(\w+=\S+\s+)*git\s+push\s+(-[a-zA-Z]*f|--force|--force-with-lease)'
+# input = '(?:^|[|;&]\s*)(?:\w+=\S+\s+)*git\s+push\b[^|;&]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force(?:-with-lease)?(?:=\S+)?)(?=\s|$)'
 
 [[rules]]
 tool   = 'Bash'
