@@ -428,6 +428,8 @@ func probeVersionWithTimeout(path string, timeout time.Duration) (string, error)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
+	// Worst-case wall time is about 2x timeout: the context kills the direct
+	// child, then WaitDelay bounds pipe drain from any surviving descendants.
 	cmd.WaitDelay = timeout
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))

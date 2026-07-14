@@ -169,11 +169,11 @@ func TestProbeVersionBoundsGrandchildHoldingPipe(t *testing.T) {
 		bin := filepath.Join(t.TempDir(), "claude-gatekeeper")
 		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper healthy'\nsleep 5 &\n", 0755)
 		started := time.Now()
-		version, err := probeVersionWithTimeout(bin, 20*time.Millisecond)
+		version, err := probeVersionWithTimeout(bin, 500*time.Millisecond)
 		if err != nil || version != "healthy" {
 			t.Fatalf("version = %q, error = %v", version, err)
 		}
-		if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
 			t.Fatalf("probe held by inherited pipe for %s", elapsed)
 		}
 	})
