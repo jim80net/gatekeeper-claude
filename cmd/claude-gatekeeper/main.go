@@ -18,6 +18,7 @@
 //	migrate   Convert settings.json permissions to gatekeeper TOML.
 //	setup     Register the hook for a harness (--harness claude|codex|grok).
 //	uninstall Remove the Claude hook registration.
+//	doctor    Inventory live gatekeeper hook surfaces and report drift.
 package main
 
 import (
@@ -28,6 +29,7 @@ import (
 	"path/filepath"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
+	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
@@ -51,6 +53,8 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 			return runSetup(args[1:])
 		case "uninstall":
 			return runUninstall()
+		case "doctor", "inventory":
+			return runDoctor(stdout, args[1:])
 		case "version":
 			fmt.Fprintf(os.Stderr, "claude-gatekeeper %s\n", version)
 			return 0
@@ -90,6 +94,39 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	installDefaultConfig()
 
 	return runHook(stdin, stdout, ad, *debug)
+}
+
+func runDoctor(stdout io.Writer, args []string) int {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	jsonOutput := fs.Bool("json", false, "Emit machine-readable JSON")
+	expectedBinary := fs.String("expected-binary", "", "Expected binary path (default: this executable)")
+	expectedVersion := fs.String("expected-version", version, "Expected version stamp")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *expectedBinary == "" {
+		if exe, err := os.Executable(); err == nil {
+			*expectedBinary = exe
+		}
+	}
+	report, err := inventory.Collect(inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "doctor: %v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		if err := inventory.WriteJSON(stdout, report); err != nil {
+			fmt.Fprintf(os.Stderr, "doctor: %v\n", err)
+			return 2
+		}
+	} else {
+		inventory.WriteTable(stdout, report)
+	}
+	if !report.OK {
+		return 1
+	}
+	return 0
 }
 
 // runHook parses the hook input, evaluates the rules, and encodes the verdict

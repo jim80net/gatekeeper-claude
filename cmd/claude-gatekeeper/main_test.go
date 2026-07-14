@@ -117,6 +117,47 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunDoctorJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := filepath.Join(home, "bin", "claude-gatekeeper")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'claude-gatekeeper test-version' >&2\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	config := `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"` + bin + ` --harness grok"}]}]}}`
+	hookPath := filepath.Join(home, ".grok", "hooks", "gatekeeper.json")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hookPath, []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldVersion := version
+	version = "test-version"
+	t.Cleanup(func() { version = oldVersion })
+	var stdout bytes.Buffer
+	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--expected-binary", bin})
+	if code != 0 {
+		t.Fatalf("exit code = %d, output = %s", code, stdout.String())
+	}
+	var report struct {
+		OK       bool `json:"ok"`
+		Surfaces []struct {
+			Harness string `json:"harness"`
+		} `json:"surfaces"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK || len(report.Surfaces) != 1 || report.Surfaces[0].Harness != "grok" {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestRunNonBashTool(t *testing.T) {
 	setupTestHome(t)
 	input := map[string]interface{}{
