@@ -53,33 +53,36 @@ const (
 )
 
 // toolAliases maps grok-native tool names onto the canonical taxonomy.
-// LIVE-VERIFIED (probe 2026-07-03, grok 0.2.82): grok's PreToolUse hook payload
-// reports the shell tool as "Shell" (NOT "run_terminal_cmd" as the design
-// inferred). Both are mapped for robustness across grok surfaces/versions.
+// "Shell" is from the 0.2.82 live hook capture. The remaining native names are
+// pinned by the 0.2.101 shipping hook guide, which says toolName contains the
+// real tool name and publishes these Claude-to-Grok matcher aliases.
 // Unmapped names pass through unchanged.
 var toolAliases = map[string]string{
-	"Shell":            canonical.ToolBash, // verified: hook payload toolName
-	"run_terminal_cmd": canonical.ToolBash, // design-inferred alias, kept defensively
-	"search_replace":   canonical.ToolEdit,
-	"read_file":        canonical.ToolRead,
-	"grep_search":      canonical.ToolGrep,
+	"Shell":                canonical.ToolBash, // live capture, grok 0.2.82
+	"run_terminal_command": canonical.ToolBash,
+	"search_replace":       canonical.ToolEdit,
+	"write":                canonical.ToolWrite,
+	"read_file":            canonical.ToolRead,
+	"grep":                 canonical.ToolGrep,
+	"list_dir":             canonical.ToolGlob,
+	"web_fetch":            canonical.ToolWebFetch,
+	"web_search":           canonical.ToolWebSearch,
 }
 
-// inputKeys lists, per canonical tool, the candidate tool_input JSON keys to
-// try when extracting the primary matchable string. Grok's exact tool_input
-// field names are UNVERIFIED (design §2.3b lists the stdin envelope fields but
-// not the per-tool input schema), so a superset of plausible keys is tried in
-// order; the first present string value wins. Confirm and tighten once a live
-// grok probe captures a real tool_input payload.
+// inputKeys contains only statically or live-verified primary fields. The
+// 0.2.101 tool schemas captured in ~/.grok pin these fields. WebSearch is
+// intentionally absent: its native name is documented, but no authoritative
+// input schema/capture was available without a live probe. Missing verified
+// shapes therefore fall back visibly to the tool name instead of silently
+// relying on guessed fields.
 var inputKeys = map[string][]string{
-	canonical.ToolBash:      {"command", "cmd"},
-	canonical.ToolRead:      {"file_path", "path", "target_file"},
-	canonical.ToolWrite:     {"file_path", "path", "target_file"},
-	canonical.ToolEdit:      {"file_path", "path", "target_file"},
-	canonical.ToolGlob:      {"pattern", "glob_pattern", "path"},
-	canonical.ToolGrep:      {"pattern", "query", "regex"},
-	canonical.ToolWebFetch:  {"url"},
-	canonical.ToolWebSearch: {"query", "search_term"},
+	canonical.ToolBash:     {"command"},
+	canonical.ToolRead:     {"target_file"},
+	canonical.ToolWrite:    {"file_path"},
+	canonical.ToolEdit:     {"file_path"},
+	canonical.ToolGlob:     {"target_directory"},
+	canonical.ToolGrep:     {"pattern"},
+	canonical.ToolWebFetch: {"url"},
 }
 
 // grokInput is grok's hook stdin envelope.
@@ -125,7 +128,7 @@ func New() *Adapter { return &Adapter{} }
 func (a *Adapter) Name() string { return "grok" }
 
 // ParseInput reads grok's hook stdin and maps it to a canonical tool call,
-// normalising grok's tool taxonomy (run_terminal_cmd -> Bash, etc.) and
+// normalising grok's tool taxonomy (run_terminal_command -> Bash, etc.) and
 // extracting the primary matchable string from tool_input.
 func (a *Adapter) ParseInput(r io.Reader) (*canonical.ToolCall, error) {
 	var in grokInput

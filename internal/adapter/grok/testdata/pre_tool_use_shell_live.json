@@ -1,0 +1,1 @@
+{"hookEventName":"pre_tool_use","sessionId":"019f25eb","cwd":"/proj","workspaceRoot":"/proj","timestamp":"2026-07-03T03:00:26Z","transcriptPath":"/x/updates.jsonl","toolName":"Shell","toolUseId":"call-abc","toolInput":{"command":"touch /tmp/gkprobe_deny_canary","description":"Create deny canary"},"toolInputTruncated":false,"permissionMode":"bypassPermissions"}

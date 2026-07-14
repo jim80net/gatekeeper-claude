@@ -1,0 +1,1 @@
+{"hookEventName":"pre_tool_use","toolName":"search_replace","toolInput":{"file_path":"internal/main.go","old_string":"before","new_string":"after","replace_all":false},"cwd":"/repo","workspaceRoot":"/repo","toolInputTruncated":false}

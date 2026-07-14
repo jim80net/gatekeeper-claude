@@ -1,0 +1,1 @@
+{"hookEventName":"pre_tool_use","toolName":"run_terminal_command","toolInput":{"command":"git status","description":"Inspect worktree"},"cwd":"/repo","workspaceRoot":"/repo","toolInputTruncated":false}
