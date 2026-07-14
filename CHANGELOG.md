@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/jim80net/gatekeeper-claude/compare/v1.4.0...v1.4.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* pin goreleaser project_name to claude-gatekeeper ([#48](https://github.com/jim80net/gatekeeper-claude/issues/48)) ([3834002](https://github.com/jim80net/gatekeeper-claude/commit/383400247844ad77de04578199dcec20f5524e9b))
+* plugin wrapper fails closed when the gatekeeper binary cannot be obtained ([#25](https://github.com/jim80net/gatekeeper-claude/issues/25), [#51](https://github.com/jim80net/gatekeeper-claude/issues/51)) ([8a036d9](https://github.com/jim80net/gatekeeper-claude/commit/8a036d92b87de8afe51c2c4186b7522aa4298dea))
+* verify grok non-shell tool inputs against shipped 0.2.101 contract ([#26](https://github.com/jim80net/gatekeeper-claude/issues/26), [#52](https://github.com/jim80net/gatekeeper-claude/issues/52)) ([54e07e6](https://github.com/jim80net/gatekeeper-claude/commit/54e07e62e02f4c65441adcdc3c77a3d8f5d5b249))
+
 ## [1.4.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.3.1...v1.4.0) (2026-07-14)
 
 
