@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.3.1...v1.4.0) (2026-07-14)
+
+
+### Features
+
+* add fleet hook inventory doctor command ([#38](https://github.com/jim80net/gatekeeper-claude/issues/38)) ([c7e2a98](https://github.com/jim80net/gatekeeper-claude/commit/c7e2a9889c74395a7d9ced8568085c46ecf9f7af))
+
+
+### Bug Fixes
+
+* **engine:** domain-scope merge authority via GATEKEEPER_INPUT ([#34](https://github.com/jim80net/gatekeeper-claude/issues/34)) ([681e8ac](https://github.com/jim80net/gatekeeper-claude/commit/681e8ac9ee3b2ea1892684f2c5a8afec177afa6a))
+* fail closed on untrusted Codex hooks ([#28](https://github.com/jim80net/gatekeeper-claude/issues/28), [#46](https://github.com/jim80net/gatekeeper-claude/issues/46)) ([c7e2a98](https://github.com/jim80net/gatekeeper-claude/commit/c7e2a9889c74395a7d9ced8568085c46ecf9f7af))
+* force-push deny rule matches the force flag anywhere in the command ([#33](https://github.com/jim80net/gatekeeper-claude/issues/33), [#45](https://github.com/jim80net/gatekeeper-claude/issues/45)) ([c7e2a98](https://github.com/jim80net/gatekeeper-claude/commit/c7e2a9889c74395a7d9ced8568085c46ecf9f7af))
+
 ## [1.3.1](https://github.com/jim80net/claude-gatekeeper/compare/v1.3.0...v1.3.1) (2026-07-08)
 
 
