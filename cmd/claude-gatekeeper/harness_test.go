@@ -68,6 +68,46 @@ func TestHarnessSelectionGrokDeny(t *testing.T) {
 	}
 }
 
+// TestShippedForcePushRule is the golden policy fixture for issue #33. It uses
+// the shipped config so positional or token-boundary regressions cannot hide in
+// a hand-copied test regex.
+func TestShippedForcePushRule(t *testing.T) {
+	writeHomeShippedConfig(t)
+	tests := []struct {
+		name         string
+		command      string
+		wantDecision string
+	}{
+		{"force flag after refs", "git push origin feature --force", `"permissionDecision":"deny"`},
+		{"force flag before refs", "git push --force origin feature", `"permissionDecision":"deny"`},
+		{"bundled short force flag", "git push origin feature -uf", `"permissionDecision":"deny"`},
+		{"force with lease", "git push origin feature --force-with-lease", `"permissionDecision":"deny"`},
+		{"timeout prefix", "timeout 600 git push --force origin feature", `"permissionDecision":"deny"`},
+		{"environment prefix", "GIT_TRACE=1 git push --force origin feature", `"permissionDecision":"deny"`},
+		{"sudo prefix", "sudo git push --force origin feature", `"permissionDecision":"deny"`},
+		{"path prefixed git", "/usr/bin/git push --force origin feature", `"permissionDecision":"deny"`},
+		{"parenthesized subshell", "(git push --force origin feature)", `"permissionDecision":"deny"`},
+		{"backtick command substitution", "`git push --force origin feature`", `"permissionDecision":"deny"`},
+		{"newline separated force push", "echo hi\ngit push --force origin feature", `"permissionDecision":"deny"`},
+		{"safe push", "git push origin feature", `"permissionDecision":"allow"`},
+		{"safe push then force text on next line", "git push origin feature\necho use --force flag later", `"permissionDecision":"allow"`},
+		{"force text in commit message", "git commit -m 'use --force later'", `"permissionDecision":"allow"`},
+		{"quoted force push in commit message", "git commit -m \"git push --force is dangerous\"", `"permissionDecision":"allow"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			code := run(strings.NewReader(hookJSON("Bash", tc.command)), &stdout, nil)
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0", code)
+			}
+			if !strings.Contains(stdout.String(), tc.wantDecision) {
+				t.Errorf("command %q: stdout = %q, want %s", tc.command, stdout.String(), tc.wantDecision)
+			}
+		})
+	}
+}
+
 // TestOnErrorMatrix drives every error class through each harness under both
 // on_error postures and asserts the harness-correct abstain vs deny encoding.
 func TestOnErrorMatrix(t *testing.T) {
