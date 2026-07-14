@@ -57,10 +57,10 @@ reason = "Destructive: git clean with force"
 
 [[rules]]
 tool   = 'Bash'
-input  = '(?:^|[\s|;&])git\s+push\b[^|;&\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force(?:-with-lease)?(?:=\S+)?)(?=\s|$)'
+input  = '(?:^|[\s|;&(/`])git\s+push\b[^|;&\n]*\s(?:-[a-zA-Z]*f[a-zA-Z]*|--force(?:-with-lease)?(?:=\S+)?)(?=\s|$)'
 decision = "deny"
 reason = "Destructive: git force push"
-# The leading whitespace boundary covers wrapper/env prefixes without matching
+# The token boundary covers wrappers, binary paths, and subshells without matching
 # words that merely end in "git"; the argument span never crosses a shell separator.
 
 [[rules]]
