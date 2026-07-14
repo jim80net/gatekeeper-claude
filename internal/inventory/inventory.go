@@ -108,7 +108,7 @@ func Collect(opts Options) (Report, error) {
 		if err != nil {
 			return Report{}, fmt.Errorf("read %s: %w", c.path, err)
 		}
-		summary := FileSummary{Path: c.path, Unrecognized: []string{}, Warnings: shapeWarnings}
+		summary := FileSummary{Path: c.path, Unrecognized: []string{}, Warnings: append([]string{}, shapeWarnings...)}
 		summary.CommandsSeen = len(commands)
 		if len(shapeWarnings) > 0 {
 			report.OK = false
@@ -142,11 +142,15 @@ func Collect(opts Options) (Report, error) {
 		report.OK = false
 		report.Warnings = append(report.Warnings, fmt.Sprintf("only %d gatekeeper surfaces found; minimum is %d", len(report.Surfaces), opts.MinSurfaces))
 	}
-	sort.Slice(report.Surfaces, func(i, j int) bool {
-		if report.Surfaces[i].Kind == report.Surfaces[j].Kind {
-			return report.Surfaces[i].ConfigPath < report.Surfaces[j].ConfigPath
+	sort.SliceStable(report.Surfaces, func(i, j int) bool {
+		left, right := report.Surfaces[i], report.Surfaces[j]
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
 		}
-		return report.Surfaces[i].Kind < report.Surfaces[j].Kind
+		if left.ConfigPath != right.ConfigPath {
+			return left.ConfigPath < right.ConfigPath
+		}
+		return left.Command < right.Command
 	})
 	sort.Slice(report.Files, func(i, j int) bool { return report.Files[i].Path < report.Files[j].Path })
 	return report, nil
@@ -402,6 +406,7 @@ func findCommands(value any) []string {
 		}
 	}
 	walk(value)
+	sort.Strings(commands)
 	return commands
 }
 
@@ -423,8 +428,12 @@ func probeVersionWithTimeout(path string, timeout time.Duration) (string, error)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd.WaitDelay = timeout
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
+	if errors.Is(err, exec.ErrWaitDelay) && text != "" {
+		return strings.TrimSpace(strings.TrimPrefix(text, binaryName)), nil
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return "", fmt.Errorf("probe timed out after %s; output: %s", timeout, emptyDash(text))
 	}

@@ -136,11 +136,8 @@ func TestRunDoctorJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldVersion := version
-	version = "test-version"
-	t.Cleanup(func() { version = oldVersion })
 	var stdout bytes.Buffer
-	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--expected-binary", bin})
+	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--expected-binary", bin, "--expected-version", "test-version"})
 	if code != 0 {
 		t.Fatalf("exit code = %d, output = %s", code, stdout.String())
 	}
@@ -158,12 +155,35 @@ func TestRunDoctorJSON(t *testing.T) {
 	}
 }
 
-func TestRunDoctorExitCodes(t *testing.T) {
-	t.Run("drift", func(t *testing.T) {
+func TestRunDoctorFailureExitCodes(t *testing.T) {
+	t.Run("minimum surfaces", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		var stdout bytes.Buffer
 		if code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json"}); code != 1 {
 			t.Fatalf("exit code = %d, want 1; output = %s", code, stdout.String())
+		}
+	})
+	t.Run("version drift", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		bin := filepath.Join(home, "bin", "claude-gatekeeper")
+		if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'claude-gatekeeper observed'\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		hookPath := filepath.Join(home, ".claude", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		config := `{"hooks":{"PreToolUse":[{"hooks":[{"command":"` + bin + `"}]}]}}`
+		if err := os.WriteFile(hookPath, []byte(config), 0644); err != nil {
+			t.Fatal(err)
+		}
+		code := run(strings.NewReader(""), &bytes.Buffer{}, []string{"doctor", "--expected-binary", bin, "--expected-version", "wanted"})
+		if code != 1 {
+			t.Fatalf("exit code = %d, want 1", code)
 		}
 	})
 	t.Run("usage error", func(t *testing.T) {

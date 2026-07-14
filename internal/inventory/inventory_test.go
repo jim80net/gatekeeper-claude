@@ -164,6 +164,34 @@ func TestProbeVersionTimesOutAndIncludesOutput(t *testing.T) {
 	}
 }
 
+func TestProbeVersionBoundsGrandchildHoldingPipe(t *testing.T) {
+	t.Run("clean child output remains successful", func(t *testing.T) {
+		bin := filepath.Join(t.TempDir(), "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper healthy'\nsleep 5 &\n", 0755)
+		started := time.Now()
+		version, err := probeVersionWithTimeout(bin, 20*time.Millisecond)
+		if err != nil || version != "healthy" {
+			t.Fatalf("version = %q, error = %v", version, err)
+		}
+		if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+			t.Fatalf("probe held by inherited pipe for %s", elapsed)
+		}
+	})
+
+	t.Run("killed child and inherited pipe are bounded", func(t *testing.T) {
+		bin := filepath.Join(t.TempDir(), "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho wedged >&2\nsleep 5\n", 0755)
+		started := time.Now()
+		_, err := probeVersionWithTimeout(bin, 20*time.Millisecond)
+		if err == nil || !strings.Contains(err.Error(), "timed out") || !strings.Contains(err.Error(), "wedged") {
+			t.Fatalf("error = %v", err)
+		}
+		if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+			t.Fatalf("probe held by inherited pipe for %s", elapsed)
+		}
+	})
+}
+
 func TestCollectIgnoresNonGatekeeperHooksAndMissingSurfaces(t *testing.T) {
 	home := t.TempDir()
 	writeHook(t, filepath.Join(home, ".claude", "settings.json"), "/opt/other-hook")
@@ -199,7 +227,9 @@ func TestWriteJSONAndTable(t *testing.T) {
 }
 
 func TestEmptyJSONUsesArraysAndTableHasNoSurfaceHeader(t *testing.T) {
-	report, err := Collect(Options{Home: t.TempDir(), MinSurfaces: 1})
+	home := t.TempDir()
+	writeHook(t, filepath.Join(home, ".claude", "settings.json"), "/opt/other-hook")
+	report, err := Collect(Options{Home: home, MinSurfaces: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,13 +237,32 @@ func TestEmptyJSONUsesArraysAndTableHasNoSurfaceHeader(t *testing.T) {
 	if err := WriteJSON(&out, report); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.String(), `"surfaces": null`) || !strings.Contains(out.String(), `"surfaces": []`) {
+	if strings.Contains(out.String(), `"surfaces": null`) || !strings.Contains(out.String(), `"surfaces": []`) || strings.Contains(out.String(), `"warnings": null`) {
 		t.Fatalf("json = %s", out.String())
 	}
 	out.Reset()
 	WriteTable(&out, report)
 	if strings.Contains(out.String(), "SURFACE") || !strings.Contains(out.String(), "WARNING") {
 		t.Fatalf("table = %q", out.String())
+	}
+}
+
+func TestCollectSurfaceOrderIsStableByCommand(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "claude-gatekeeper")
+	writeFile(t, bin, "binary", 0755)
+	config := map[string]any{"hooks": map[string]any{"PreToolUse": []any{
+		map[string]any{"hooks": []any{map[string]any{"command": bin + " --debug"}}},
+		map[string]any{"hooks": []any{map[string]any{"command": bin}}},
+	}}}
+	data, _ := json.Marshal(config)
+	writeFile(t, filepath.Join(home, ".claude", "settings.json"), string(data), 0644)
+	report, err := Collect(Options{Home: home, ExpectedBinary: bin, VersionProbe: func(string) (string, error) { return "v", nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Surfaces) != 2 || report.Surfaces[0].Command != bin || report.Surfaces[1].Command != bin+" --debug" {
+		t.Fatalf("commands = %#v", report.Surfaces)
 	}
 }
 
