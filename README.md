@@ -99,6 +99,13 @@ Grok requires the project folder to be `/hooks-trust`ed; Codex requires persiste
 
 Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are auto-downloaded from GitHub Releases on first run. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
 
+If the plugin wrapper cannot find, download, or build the gatekeeper binary, it
+blocks the tool call by default (exit 2) and prints remediation. An explicit
+`on_error = "abstain"` in the normal layered config preserves fail-open behavior.
+For first-install environments that intentionally prefer availability before
+enforcement, `GATEKEEPER_BOOTSTRAP_ABSTAIN=1` is an escape hatch; it emits a
+warning that no gatekeeper policy is active.
+
 **Windows (PowerShell)**: If you're on native Windows without Git Bash, edit `hooks/hooks.json` and change the command to:
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PLUGIN_ROOT}/bin/run.ps1
