@@ -1,0 +1,1 @@
+{"hookEventName":"pre_tool_use","toolName":"grep","toolInput":{"pattern":"password\\s*=","path":".","glob":"*.toml"},"cwd":"/repo","workspaceRoot":"/repo","toolInputTruncated":false}

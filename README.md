@@ -30,6 +30,8 @@ One binary serves three harnesses, selected by `--harness` (or the `GATEKEEPER_H
 
 **grok is verified as a real gate too (2026-07-03 live probe, grok 0.2.82).** In an isolated sandbox under `--permission-mode bypassPermissions` (grok's full-auto), a global `~/.grok/hooks/` PreToolUse hook that emits the gatekeeper's grok-native `{"decision":"deny"}` + exit 2 **blocked** a canary command (the file was never created), while an abstaining call (exit 1) let a control command run. So the gatekeeper's grok adapter is a real in-harness hard control on auto-approve grok agents — grok evaluates PreToolUse hooks *before* the permission system, "regardless of permission mode." Re-confirmed under the exact deploy config `permission_mode = "always-approve"` (which grok resolves to the same `bypassPermissions` mode it reports in the hook payload): deny blocked, abstain ran.
 
+Grok 0.2.101's shipped hook guide and locally captured shipped tool schemas also pin these native input shapes: `run_terminal_command.command`, `read_file.target_file`, `search_replace.file_path`, `write.file_path`, `list_dir.target_directory`, `grep.pattern`, and `web_fetch.url`. Golden hook fixtures live in `internal/adapter/grok/testdata`. `web_search` is a verified native tool name, but its primary input field remains **unverified** without a live hook capture; the adapter deliberately does not guess one, so input-targeted WebSearch rules are not supported yet.
+
 > **Grok hook wire — verified schema (corrects earlier inference).** grok's PreToolUse hook stdin is **camelCase**: `toolName` (the shell tool is `"Shell"`), `toolInput` (`{command,description}`), `hookEventName` (value `"pre_tool_use"`), `cwd`/`workspaceRoot`, `permissionMode`. Register as a **global** `~/.grok/hooks/*.json` in the Claude-shaped `{ "hooks": { "PreToolUse": [ … ] } }` format. (Grok's separate *settings-layer* `--deny` list is a different mechanism and is **not** enforced under `--always-approve` — the hook is; don't rely on settings-deny for auto-approve agents.)
 
 Register the hook per harness:
@@ -135,7 +137,7 @@ Release **asset** filenames remain `claude-gatekeeper_${os}_${arch}.tar.gz` (bin
 ## How it works
 
 1. The harness invokes the gatekeeper before each tool call, sending JSON on stdin.
-2. The `--harness` adapter parses that harness-native JSON into a canonical tool call (normalising the tool name, e.g. grok's `run_terminal_cmd` → `Bash`).
+2. The `--harness` adapter parses that harness-native JSON into a canonical tool call (normalising the tool name, e.g. grok's `run_terminal_command` → `Bash`).
 3. On first run, the shipped `gatekeeper.toml` is auto-copied to `~/.claude/gatekeeper.toml` if no global config exists.
 4. Rules are loaded and layered (see [Config layering](#config-layering)).
 5. Each rule has a `tool` regex (matched against the canonical tool name) and an `input` regex (matched against the command/file path/URL).

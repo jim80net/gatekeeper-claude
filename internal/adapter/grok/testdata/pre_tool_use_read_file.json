@@ -1,0 +1,1 @@
+{"hookEventName":"pre_tool_use","toolName":"read_file","toolInput":{"target_file":"secrets/.env","offset":1,"limit":100},"cwd":"/repo","workspaceRoot":"/repo","toolInputTruncated":false}

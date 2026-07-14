@@ -2,6 +2,8 @@ package grok_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,8 +18,12 @@ import (
 // lives in toolInput.command. A regression here means the adapter has drifted
 // from grok's actual wire and would silently enforce nothing.
 func TestParseInputLivePayload(t *testing.T) {
-	const live = `{"hookEventName":"pre_tool_use","sessionId":"019f25eb","cwd":"/proj","workspaceRoot":"/proj","timestamp":"2026-07-03T03:00:26Z","transcriptPath":"/x/updates.jsonl","toolName":"Shell","toolUseId":"call-abc","toolInput":{"command":"touch /tmp/gkprobe_deny_canary","description":"Create deny canary"},"toolInputTruncated":false,"permissionMode":"bypassPermissions"}`
-	tc, err := grok.New().ParseInput(strings.NewReader(live))
+	f, err := os.Open(filepath.Join("testdata", "pre_tool_use_shell_live.json"))
+	if err != nil {
+		t.Fatalf("open live fixture: %v", err)
+	}
+	defer f.Close()
+	tc, err := grok.New().ParseInput(f)
 	if err != nil {
 		t.Fatalf("ParseInput: %v", err)
 	}
@@ -38,48 +44,32 @@ func TestParseInputLivePayload(t *testing.T) {
 	}
 }
 
-// TestParseInputTaxonomy verifies grok's tool taxonomy is normalised onto the
-// canonical names and the command/path is extracted from toolInput. The shell
-// tool "Shell" and the camelCase field names are live-verified (2026-07-03);
-// the read/edit/grep aliases remain design-inferred (unverified) but are covered
-// so a future live capture can confirm or correct them in one place.
-func TestParseInputTaxonomy(t *testing.T) {
+// TestParseInputGoldenFixtures pins the real native names and primary input
+// fields from Grok 0.2.101's shipped hook guide and captured tool schemas.
+func TestParseInputGoldenFixtures(t *testing.T) {
 	tests := []struct {
-		name      string
-		stdin     string
+		fixture   string
 		wantTool  string
 		wantInput string
 	}{
-		{
-			name:      "Shell -> Bash (live-verified)",
-			stdin:     `{"toolName":"Shell","toolInput":{"command":"git push origin main"},"cwd":"/repo"}`,
-			wantTool:  canonical.ToolBash,
-			wantInput: "git push origin main",
-		},
-		{
-			name:      "run_terminal_cmd -> Bash (defensive alias)",
-			stdin:     `{"toolName":"run_terminal_cmd","toolInput":{"command":"ls"},"cwd":"/repo"}`,
-			wantTool:  canonical.ToolBash,
-			wantInput: "ls",
-		},
-		{
-			name:      "read_file -> Read (inferred alias)",
-			stdin:     `{"toolName":"read_file","toolInput":{"file_path":"/home/u/.env"},"workspaceRoot":"/repo"}`,
-			wantTool:  canonical.ToolRead,
-			wantInput: "/home/u/.env",
-		},
-		{
-			name:      "unknown tool passes through, input falls back to tool name",
-			stdin:     `{"toolName":"mcp__x__y","toolInput":{"z":"q"}}`,
-			wantTool:  "mcp__x__y",
-			wantInput: "mcp__x__y",
-		},
+		{"pre_tool_use_run_terminal_command.json", canonical.ToolBash, "git status"},
+		{"pre_tool_use_read_file.json", canonical.ToolRead, "secrets/.env"},
+		{"pre_tool_use_search_replace.json", canonical.ToolEdit, "internal/main.go"},
+		{"pre_tool_use_write.json", canonical.ToolWrite, "build/output.txt"},
+		{"pre_tool_use_list_dir.json", canonical.ToolGlob, "internal/adapter"},
+		{"pre_tool_use_grep.json", canonical.ToolGrep, "password\\s*="},
+		{"pre_tool_use_web_fetch.json", canonical.ToolWebFetch, "https://example.com/private"},
 	}
 
 	a := grok.New()
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tc, err := a.ParseInput(strings.NewReader(tt.stdin))
+		t.Run(tt.fixture, func(t *testing.T) {
+			f, err := os.Open(filepath.Join("testdata", tt.fixture))
+			if err != nil {
+				t.Fatalf("open fixture: %v", err)
+			}
+			defer f.Close()
+			tc, err := a.ParseInput(f)
 			if err != nil {
 				t.Fatalf("ParseInput: %v", err)
 			}
@@ -90,6 +80,35 @@ func TestParseInputTaxonomy(t *testing.T) {
 				t.Errorf("InputString = %q, want %q", tc.InputString, tt.wantInput)
 			}
 		})
+	}
+}
+
+func TestParseInputUnverifiedShapeFallsBack(t *testing.T) {
+	tc, err := grok.New().ParseInput(strings.NewReader(
+		`{"toolName":"web_search","toolInput":{"query":"secrets"}}`))
+	if err != nil {
+		t.Fatalf("ParseInput: %v", err)
+	}
+	if tc.Tool != canonical.ToolWebSearch || tc.InputString != canonical.ToolWebSearch {
+		t.Fatalf("unverified WebSearch = tool %q input %q", tc.Tool, tc.InputString)
+	}
+}
+
+func TestParseInputDoesNotAcceptFormerGuesses(t *testing.T) {
+	tests := []string{
+		`{"toolName":"read_file","toolInput":{"file_path":"secrets/.env"}}`,
+		`{"toolName":"list_dir","toolInput":{"path":"secrets"}}`,
+		`{"toolName":"grep_search","toolInput":{"query":"secret"}}`,
+		`{"toolName":"run_terminal_cmd","toolInput":{"cmd":"git push"}}`,
+	}
+	for _, stdin := range tests {
+		tc, err := grok.New().ParseInput(strings.NewReader(stdin))
+		if err != nil {
+			t.Fatalf("ParseInput(%s): %v", stdin, err)
+		}
+		if strings.Contains(tc.InputString, "secret") || tc.InputString == "git push" {
+			t.Errorf("guessed shape unexpectedly extracted input: %#v", tc)
+		}
 	}
 }
 
