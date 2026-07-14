@@ -82,7 +82,12 @@ func TestShippedForcePushRule(t *testing.T) {
 		{"force flag before refs", "git push --force origin feature", `"permissionDecision":"deny"`},
 		{"bundled short force flag", "git push origin feature -uf", `"permissionDecision":"deny"`},
 		{"force with lease", "git push origin feature --force-with-lease", `"permissionDecision":"deny"`},
+		{"timeout prefix", "timeout 600 git push --force origin feature", `"permissionDecision":"deny"`},
+		{"environment prefix", "GIT_TRACE=1 git push --force origin feature", `"permissionDecision":"deny"`},
+		{"sudo prefix", "sudo git push --force origin feature", `"permissionDecision":"deny"`},
+		{"newline separated force push", "echo hi\ngit push --force origin feature", `"permissionDecision":"deny"`},
 		{"safe push", "git push origin feature", `"permissionDecision":"allow"`},
+		{"safe push then force text on next line", "git push origin feature\necho use --force flag later", `"permissionDecision":"allow"`},
 		{"force text in commit message", "git commit -m 'use --force later'", `"permissionDecision":"allow"`},
 	}
 	for _, tc := range tests {
