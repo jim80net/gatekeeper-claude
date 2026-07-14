@@ -50,6 +50,7 @@ claude-gatekeeper doctor
 claude-gatekeeper doctor --json
 claude-gatekeeper doctor --expected-binary ~/go/bin/claude-gatekeeper
 claude-gatekeeper doctor --expected-version 1.3.1
+claude-gatekeeper doctor --min-surfaces 3
 ```
 
 It inventories live references in `~/.grok/hooks/gatekeeper.json`,
@@ -63,6 +64,15 @@ Plugin `bin/run.sh` entries resolve to the plugin's adjacent
 Exit status is 0 when all discovered surfaces match, 1 when drift is found, and
 2 when inventory or output fails. JSON output is intended for fleet automation
 and contains `ok`, `expected_binary`, `expected_version`, and `surfaces` fields.
+The `inventory` subcommand is an exact alias for `doctor`.
+
+The automated inventory is intentionally user-global. Project-scoped
+`.codex/hooks.json` files written by `setup --harness codex --project-dir ...`
+and project `.claude/settings.json` files are not searched because there is no
+bounded, authoritative list of fleet project roots. Before Phase 4, those files
+remain a manual checklist item (for example, search known workspaces for both
+paths). Set `--min-surfaces` to the fleet's expected global count so missing or
+unparseable discovery cannot produce a successful migration gate.
 
 Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
 

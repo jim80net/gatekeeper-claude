@@ -158,6 +158,27 @@ func TestRunDoctorJSON(t *testing.T) {
 	}
 }
 
+func TestRunDoctorExitCodes(t *testing.T) {
+	t.Run("drift", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		var stdout bytes.Buffer
+		if code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json"}); code != 1 {
+			t.Fatalf("exit code = %d, want 1; output = %s", code, stdout.String())
+		}
+	})
+	t.Run("usage error", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		if code := run(strings.NewReader(""), &bytes.Buffer{}, []string{"doctor", "--min-surfaces", "-1"}); code != 2 {
+			t.Fatalf("exit code = %d, want 2", code)
+		}
+	})
+	t.Run("help", func(t *testing.T) {
+		if code := run(strings.NewReader(""), &bytes.Buffer{}, []string{"doctor", "--help"}); code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+	})
+}
+
 func TestRunNonBashTool(t *testing.T) {
 	setupTestHome(t)
 	input := map[string]interface{}{

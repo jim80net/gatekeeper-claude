@@ -102,7 +102,15 @@ func runDoctor(stdout io.Writer, args []string) int {
 	jsonOutput := fs.Bool("json", false, "Emit machine-readable JSON")
 	expectedBinary := fs.String("expected-binary", "", "Expected binary path (default: this executable)")
 	expectedVersion := fs.String("expected-version", version, "Expected version stamp")
+	minSurfaces := fs.Int("min-surfaces", 1, "Minimum recognized surfaces required for success")
 	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if *minSurfaces < 0 {
+		fmt.Fprintln(os.Stderr, "doctor: --min-surfaces must be non-negative")
 		return 2
 	}
 	if *expectedBinary == "" {
@@ -110,7 +118,7 @@ func runDoctor(stdout io.Writer, args []string) int {
 			*expectedBinary = exe
 		}
 	}
-	report, err := inventory.Collect(inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion})
+	report, err := inventory.Collect(inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion, MinSurfaces: *minSurfaces})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "doctor: %v\n", err)
 		return 2
