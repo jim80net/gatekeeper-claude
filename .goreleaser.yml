@@ -1,4 +1,5 @@
 version: 2
+project_name: claude-gatekeeper
 
 builds:
   - main: ./cmd/claude-gatekeeper
