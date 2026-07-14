@@ -60,6 +60,10 @@ echo '{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"/tmp"}' |
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/) with [release-please](https://github.com/googleapis/release-please) for automated versioning.
 
+Use a Conventional Commit prefix in the pull request title. Pull requests are
+squash-merged, so the title becomes the commit subject that release-please uses
+for versioning and changelog generation.
+
 | Prefix | Version bump | Example |
 |--------|-------------|---------|
 | `fix:` | Patch (1.0.x) | `fix: handle empty tool input` |
