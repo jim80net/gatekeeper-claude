@@ -2,12 +2,14 @@
 package codextrust
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/BurntSushi/toml"
 )
@@ -65,11 +67,17 @@ func Inspect(home, hookPath, command string) (Status, error) {
 			if handler.Type != "command" || handler.Command != command {
 				continue
 			}
+			if handler.Async {
+				return Status{}, fmt.Errorf("Codex skips async PreToolUse hook %q before trust evaluation: async hooks are not supported", command)
+			}
+			if err := validateMatcher(group.Matcher); err != nil {
+				return Status{}, fmt.Errorf("Codex skips PreToolUse hook %q before trust evaluation: %w", command, err)
+			}
 			absoluteHookPath, err := filepath.Abs(hookPath)
 			if err != nil {
 				return Status{}, fmt.Errorf("resolve Codex hook path %s: %w", hookPath, err)
 			}
-			key := fmt.Sprintf("%s:pre_tool_use:%d:%d", filepath.Clean(absoluteHookPath), groupIndex, handlerIndex)
+			key := fmt.Sprintf("%s:pre_tool_use:%d:%d", absoluteHookPath, groupIndex, handlerIndex)
 			currentHash, err := hashPreToolUse(group.Matcher, handler)
 			if err != nil {
 				return Status{}, err
@@ -109,16 +117,36 @@ func hashPreToolUse(matcher *string, handler commandHook) (string, error) {
 		normalized["matcher"] = *matcher
 	}
 	hook := normalized["hooks"].([]interface{})[0].(map[string]interface{})
-	if handler.CommandWindows != nil {
-		hook["commandWindows"] = *handler.CommandWindows
-	}
 	if handler.StatusMessage != nil {
 		hook["statusMessage"] = *handler.StatusMessage
 	}
-	canonical, err := json.Marshal(normalized)
-	if err != nil {
+	var canonical bytes.Buffer
+	encoder := json.NewEncoder(&canonical)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(normalized); err != nil {
 		return "", fmt.Errorf("marshal normalized Codex hook: %w", err)
 	}
-	sum := sha256.Sum256(canonical)
+	serialized := bytes.TrimSuffix(canonical.Bytes(), []byte{'\n'})
+	sum := sha256.Sum256(serialized)
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func validateMatcher(matcher *string) error {
+	if matcher == nil || *matcher == "" || *matcher == "*" {
+		return nil
+	}
+	exact := true
+	for _, r := range *matcher {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '|') {
+			exact = false
+			break
+		}
+	}
+	if exact {
+		return nil
+	}
+	if _, err := regexp.Compile(*matcher); err != nil {
+		return fmt.Errorf("invalid matcher %q: %w", *matcher, err)
+	}
+	return nil
 }
