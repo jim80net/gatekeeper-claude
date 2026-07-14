@@ -41,6 +41,40 @@ claude-gatekeeper setup --harness codex               # writes ~/.codex/hooks.js
 claude-gatekeeper setup --harness codex --project-dir .  # writes ./.codex/hooks.json (project-scoped)
 ```
 
+### Fleet hook inventory
+
+Use the read-only doctor command before changing an installed binary or hook:
+
+```bash
+claude-gatekeeper doctor
+claude-gatekeeper doctor --json
+claude-gatekeeper doctor --expected-binary ~/go/bin/claude-gatekeeper
+claude-gatekeeper doctor --expected-version 1.3.1
+claude-gatekeeper doctor --min-surfaces 3
+```
+
+It inventories live references in `~/.grok/hooks/gatekeeper.json`,
+`~/.codex/hooks.json`, Claude settings files, and installed Claude plugin hook
+manifests. For each surface it reports the configured or wrapper-resolved binary,
+the result of `claude-gatekeeper --version`, the selected harness, and drift from
+the running command's expected binary/version and the surface's required harness.
+Plugin `bin/run.sh` entries resolve to the plugin's adjacent
+`bin/claude-gatekeeper`; the doctor never executes the download/build wrapper.
+
+Exit status is 0 when all discovered surfaces match, 1 when drift is found, and
+2 when inventory or output fails. JSON output is intended for fleet automation
+and contains `ok`, `expected_binary`, `expected_version`, `min_surfaces`,
+`warnings`, `files`, and `surfaces` fields.
+The `inventory` subcommand is an exact alias for `doctor`.
+
+The automated inventory is intentionally user-global. Project-scoped
+`.codex/hooks.json` files written by `setup --harness codex --project-dir ...`
+and project `.claude/settings.json` files are not searched because there is no
+bounded, authoritative list of fleet project roots. Until project-scoped
+discovery ships, those files remain a manual checklist item (for example, search
+known workspaces for both paths). Set `--min-surfaces` to the fleet's expected global count so missing or
+unparseable discovery cannot produce a successful migration gate.
+
 Grok requires the project folder to be `/hooks-trust`ed; codex requires persisted hook trust (or `--dangerously-bypass-hook-trust` for vetted automation). Codex reads both the global `~/.codex/hooks.json` and a project `.codex/hooks.json`.
 
 ## Install
