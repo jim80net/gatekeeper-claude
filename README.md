@@ -260,6 +260,37 @@ claude-gatekeeper migrate --settings /path/to/settings.json --output /path/to/ou
 
 Review the generated TOML — some globs may need manual refinement.
 
+## Test policy changes before deploying them
+
+`claude-gatekeeper test` runs declarative cases through the same canonical rule
+engine as live hooks. By default it loads the normal global plus project config
+layers for the current directory. Use `--config` to test one candidate policy
+file in isolation; the command exits 0 when all cases pass, 1 for expectation
+failures, and 2 for invalid input or evaluation errors, making it suitable for
+CI.
+
+```bash
+claude-gatekeeper test examples/force-push-policy-tests.toml
+claude-gatekeeper test --config ./gatekeeper.toml examples/force-push-policy-tests.toml
+```
+
+Cases may be TOML or JSON. `command` is a readable alias for `input` when the
+tool is `Bash`; other tools use `input`. `expected_reason` is optional and, when
+set, must exactly match the final rule reason.
+
+```toml
+[[cases]]
+name = "force push is denied"
+tool = "Bash"
+command = "git push origin feature --force"
+expected = "deny" # allow | deny | abstain
+expected_reason = "Destructive: git force push"
+```
+
+The shipped [force-push matrix](examples/force-push-policy-tests.toml) captures
+the wrapper, argument-position, newline, subshell, and false-positive probes
+used to review the default policy.
+
 ## Debugging
 
 Run with `--debug` to see rule evaluation on stderr:

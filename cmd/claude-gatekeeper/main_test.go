@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -240,5 +241,38 @@ func TestRunNoConfigAbstains(t *testing.T) {
 
 	if stdout.Len() != 0 {
 		t.Errorf("expected abstain with no config, got %q", stdout.String())
+	}
+}
+
+func TestRunPolicyTestExitCodes(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "gatekeeper.toml")
+	if err := os.WriteFile(configPath, []byte("[[rules]]\ntool='Bash'\ninput='^blocked$'\ndecision='deny'\nreason='nope'\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	writeCases := func(name, expected string) string {
+		path := filepath.Join(dir, name)
+		content := "[[cases]]\nname='case'\ntool='Bash'\ncommand='blocked'\nexpected='" + expected + "'\n"
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"pass", []string{"test", "--config", configPath, writeCases("pass.toml", "deny")}, 0},
+		{"assertion failure", []string{"test", "--config", configPath, writeCases("fail.toml", "allow")}, 1},
+		{"usage error", []string{"test"}, 2},
+		{"parse error", []string{"test", filepath.Join(dir, "missing.toml")}, 2},
+		{"help", []string{"test", "--help"}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := run(strings.NewReader(""), io.Discard, tc.args); got != tc.want {
+				t.Fatalf("run() = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
