@@ -19,6 +19,7 @@
 //	setup     Register the hook for a harness (--harness claude|codex|grok).
 //	uninstall Remove the Claude hook registration.
 //	doctor    Inventory live gatekeeper hook surfaces and report drift.
+//	test      Run declarative policy cases against live or explicit config.
 package main
 
 import (
@@ -31,6 +32,7 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
 	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
+	"github.com/jim80net/claude-gatekeeper/internal/policytest"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
@@ -55,6 +57,8 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 			return runUninstall()
 		case "doctor", "inventory":
 			return runDoctor(stdout, args[1:])
+		case "test":
+			return runPolicyTest(stdout, args[1:])
 		case "version":
 			fmt.Fprintf(os.Stderr, "claude-gatekeeper %s\n", version)
 			return 0
@@ -94,6 +98,41 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	installDefaultConfig()
 
 	return runHook(stdin, stdout, ad, *debug)
+}
+
+func runPolicyTest(stdout io.Writer, args []string) int {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Evaluate only this gatekeeper TOML (default: layered live config)")
+	cwd := fs.String("cwd", "", "Default working directory for project config and preconditions")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper test [--config gatekeeper.toml] [--cwd dir] cases.toml|cases.json")
+		return 2
+	}
+	cases, err := policytest.LoadFile(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "test: %v\n", err)
+		return 2
+	}
+	results, err := policytest.Run(cases, *configPath, *cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "test: %v\n", err)
+		return 2
+	}
+	if err := policytest.WriteTable(stdout, results); err != nil {
+		fmt.Fprintf(os.Stderr, "test: %v\n", err)
+		return 2
+	}
+	if !policytest.Passed(results) {
+		return 1
+	}
+	return 0
 }
 
 func runDoctor(stdout io.Writer, args []string) int {

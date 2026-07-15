@@ -1,0 +1,94 @@
+# Regression matrix from the force-push rule review for issue #33 / PR #45.
+# Run with:
+#   claude-gatekeeper test --config gatekeeper.toml examples/force-push-policy-tests.toml
+
+[[cases]]
+name = "force flag after refs"
+tool = "Bash"
+command = "git push origin feature --force"
+expected = "deny"
+expected_reason = "Destructive: git force push"
+
+[[cases]]
+name = "force flag before refs"
+tool = "Bash"
+command = "git push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "bundled short force flag"
+tool = "Bash"
+command = "git push origin feature -uf"
+expected = "deny"
+
+[[cases]]
+name = "force with lease"
+tool = "Bash"
+command = "git push origin feature --force-with-lease=origin/feature"
+expected = "deny"
+
+[[cases]]
+name = "timeout wrapper"
+tool = "Bash"
+command = "timeout 600 git push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "environment wrapper"
+tool = "Bash"
+command = "GIT_TRACE=1 git push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "sudo wrapper"
+tool = "Bash"
+command = "sudo git push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "path-prefixed git"
+tool = "Bash"
+command = "/usr/bin/git push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "parenthesized subshell"
+tool = "Bash"
+command = "(git push --force origin feature)"
+expected = "deny"
+
+[[cases]]
+name = "backtick substitution"
+tool = "Bash"
+command = "`git push --force origin feature`"
+expected = "deny"
+
+[[cases]]
+name = "newline-separated force push"
+tool = "Bash"
+command = "echo hi\ngit push --force origin feature"
+expected = "deny"
+
+[[cases]]
+name = "safe push"
+tool = "Bash"
+command = "git push origin feature"
+expected = "allow"
+
+[[cases]]
+name = "safe push then force prose"
+tool = "Bash"
+command = "git push origin feature\necho use --force flag later"
+expected = "allow"
+
+[[cases]]
+name = "force prose in commit message"
+tool = "Bash"
+command = "git commit -m 'use --force later'"
+expected = "allow"
+
+[[cases]]
+name = "quoted force-push prose"
+tool = "Bash"
+command = 'git commit -m "git push --force is dangerous"'
+expected = "allow"
