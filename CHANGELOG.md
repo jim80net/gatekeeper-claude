@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.4.1...v1.5.0) (2026-07-18)
+
+
+### Features
+
+* add declarative policy test harness ([#56](https://github.com/jim80net/gatekeeper-claude/issues/56)) ([ff03377](https://github.com/jim80net/gatekeeper-claude/commit/ff033770a68f273f6f0fd442fe4ae2b07e408a91))
+
+
+### Bug Fixes
+
+* migrate goreleaser archives to formats lists and check config in CI ([#49](https://github.com/jim80net/gatekeeper-claude/issues/49), [#54](https://github.com/jim80net/gatekeeper-claude/issues/54)) ([0f376d3](https://github.com/jim80net/gatekeeper-claude/commit/0f376d383b37c22b1ffd8940b9040212badab05f))
+
 ## [1.4.1](https://github.com/jim80net/gatekeeper-claude/compare/v1.4.0...v1.4.1) (2026-07-14)
 
 
