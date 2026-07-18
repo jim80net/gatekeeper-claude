@@ -97,12 +97,13 @@ as `main-feature`, `mainline`, or `feature/main`. The scoped
 `refs/heads/` alternative catches the fully qualified protected ref without
 treating every slash as authority syntax.
 
-A bare `git push` names no branch. Use a precondition to check the worktree:
+A bare `git push` names no remote or branch. Use a narrowly scoped precondition
+rule to check the worktree only for that argument-free form:
 
 ```toml
 [[rules]]
 tool               = 'Bash'
-input              = '\bgit\s+push\b(?!.*\b(main|master)\b)'
+input              = '(?:^|[\s|;&(/`])git\s+(?:-C\s+\S+\s+)*push[ \t]*(?=$|[|;&\n])'
 precondition       = 'git branch --show-current'
 precondition_match = '^(main|master)$'
 decision           = 'deny'
@@ -110,7 +111,12 @@ reason             = 'Implicit push to protected branch (currently on main/maste
 ```
 
 The precondition runs only after the tool and input regexes match. It has a
-five-second timeout and runs in the tool call's working directory.
+five-second timeout and runs in the tool call's working directory. The end
+boundary deliberately prevents this rule from classifying an explicit safe
+target such as `git push origin feature` as a bare push. If your workflow uses
+remote-only forms such as `git push origin`, add separately tested coverage for
+the exact remotes and option forms you permit rather than broadening this rule
+across arbitrary arguments.
 
 ## Recipe 3: allow build cleanup without creating a second target hole
 
