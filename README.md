@@ -148,6 +148,9 @@ Release **asset** filenames remain `claude-gatekeeper_${os}_${arch}.tar.gz` (bin
 
 ## Default rules
 
+For copy-pasteable policies with the real failure stories and regression probes
+behind them, see the [rule cookbook](docs/rule-cookbook.md).
+
 The shipped `gatekeeper.toml` (auto-installed to `~/.claude/gatekeeper.toml` on first run) **denies**:
 
 | Category | Examples |
