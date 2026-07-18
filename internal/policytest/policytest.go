@@ -52,9 +52,27 @@ func LoadFile(path string) (File, error) {
 	var f File
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".json":
-		err = json.Unmarshal(data, &f)
+		decoder := json.NewDecoder(strings.NewReader(string(data)))
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&f)
+		if err == nil {
+			var trailing any
+			if trailingErr := decoder.Decode(&trailing); trailingErr != io.EOF {
+				if trailingErr == nil {
+					err = fmt.Errorf("multiple JSON values")
+				} else {
+					err = trailingErr
+				}
+			}
+		}
 	case ".toml":
-		_, err = toml.Decode(string(data), &f)
+		var metadata toml.MetaData
+		metadata, err = toml.Decode(string(data), &f)
+		if err == nil {
+			if unknown := metadata.Undecoded(); len(unknown) > 0 {
+				err = fmt.Errorf("unknown field %q", unknown[0].String())
+			}
+		}
 	default:
 		return File{}, fmt.Errorf("unsupported test file %q (want .toml or .json)", path)
 	}

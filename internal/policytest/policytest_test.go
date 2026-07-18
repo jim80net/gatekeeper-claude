@@ -81,6 +81,25 @@ func TestValidation(t *testing.T) {
 	}
 }
 
+func TestRejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct {
+		name    string
+		content string
+	}{
+		{"toml", "[[cases]]\nname='typo'\ntool='Bash'\ncommnad='danger'\nexpected='abstain'\n"},
+		{"json", `{"cases":[{"name":"typo","tool":"Bash","commnad":"danger","expected":"abstain"}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, "cases."+tc.name)
+			mustWrite(t, path, tc.content)
+			if _, err := policytest.LoadFile(path); err == nil || !strings.Contains(err.Error(), "commnad") {
+				t.Fatalf("LoadFile() error = %v, want unknown commnad field", err)
+			}
+		})
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
