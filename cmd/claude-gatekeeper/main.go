@@ -7,11 +7,11 @@
 // harness-native wire. The target harness is chosen by --harness
 // (claude|codex|grok), the GATEKEEPER_HARNESS env var, or defaults to claude.
 //
-// On any gatekeeper error (unparseable stdin, missing/unparseable config, bad
-// rule regex, evaluate error, panic) the on_error policy decides the verdict:
-// "abstain" (default) emits no decision so the harness's native permission
-// system decides; "deny" emits an explicit deny. A clean "no rule matched"
-// always abstains.
+// On a gatekeeper error the independent GATEKEEPER_ON_ERROR override, when
+// present, decides the verdict before hook input or policy is read. Otherwise
+// the legacy TOML on_error policy applies when readable. A clean "no rule
+// matched" always abstains; zero rules deny only under the independent hard
+// posture.
 //
 // Subcommands:
 //
@@ -33,6 +33,7 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
 	"github.com/jim80net/claude-gatekeeper/internal/policytest"
+	"github.com/jim80net/claude-gatekeeper/internal/posture"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
@@ -180,10 +181,20 @@ func runDoctor(stdout io.Writer, args []string) int {
 // on the adapter's wire. Every error path applies the on_error posture; a
 // recovered panic does too.
 func runHook(stdin io.Reader, stdout io.Writer, ad adapter.Adapter, debug bool) (code int) {
-	// onError starts at the safe default (abstain) and is upgraded once the
-	// config's on_error knob is known. The deferred recover uses whatever the
-	// current value is at panic time.
+	// Resolve the independent posture before any input/config operation. The
+	// deferred recover uses the override or readable TOML posture known at the
+	// point of failure.
+	override := posture.Resolve()
 	onError := canonical.Abstain
+	if override.Active {
+		onError = override.Decision
+	}
+	if override.Warning != "" {
+		fmt.Fprintf(os.Stderr, "gatekeeper: warning: %s\n", override.Warning)
+	}
+	for _, warning := range posture.ConfigWarnings() {
+		fmt.Fprintf(os.Stderr, "gatekeeper: warning: %s\n", warning)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			canonical.Debugf("panic recovered: %v", r)
@@ -196,7 +207,9 @@ func runHook(stdin io.Reader, stdout io.Writer, ad adapter.Adapter, debug bool) 
 	if err != nil {
 		canonical.Debugf("error reading input: %v", err)
 		// No cwd is available on a parse failure; use the global-only posture.
-		onError = config.GlobalOnError()
+		if !override.Active {
+			onError = config.GlobalOnError()
+		}
 		return emit(stdout, ad, errVerdict(onError, "unparseable hook input"))
 	}
 
@@ -212,10 +225,17 @@ func runHook(stdin io.Reader, stdout io.Writer, ad adapter.Adapter, debug bool) 
 		canonical.Debugf("error loading config: %v", err)
 		// The full load could not be trusted; fall back to the global-only
 		// posture (which is Abstain if the global config is itself the problem).
-		onError = config.GlobalOnError()
+		if !override.Active {
+			onError = config.GlobalOnError()
+		}
 		return emit(stdout, ad, errVerdict(onError, "config load error"))
 	}
-	onError = cfg.OnErrorDecision()
+	if !override.Active {
+		onError = cfg.OnErrorDecision()
+	}
+	if len(cfg.Rules) == 0 && override.Active && override.Decision == canonical.Deny {
+		return emit(stdout, ad, errVerdict(onError, "no policy rules loaded while fail-closed posture is active"))
+	}
 
 	// Compile the engine.
 	eng, err := engine.New(cfg, debug)

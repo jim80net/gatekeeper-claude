@@ -143,7 +143,7 @@ Release **asset** filenames remain `claude-gatekeeper_${os}_${arch}.tar.gz` (bin
 5. Each rule has a `tool` regex (matched against the canonical tool name) and an `input` regex (matched against the command/file path/URL).
 6. **Deny always wins**: if any deny rule matches, the call is blocked and the agent is told why.
 7. If any allow rule matches (and no deny), the call is auto-approved.
-8. If nothing matches (or no config exists), the gatekeeper **abstains** — it writes no verdict and the harness's native permission system decides.
+8. If nothing matches, the gatekeeper **abstains** — it writes no verdict and the harness's native permission system decides. A missing or empty config also abstains unless the independent fail-closed posture below is active.
 9. On any gatekeeper *error*, the [`on_error`](#error-behaviour-on_error) posture decides (default: abstain).
 
 ## Default rules
@@ -230,16 +230,26 @@ Deny always wins across all layers. If no config files exist, the gatekeeper abs
 
 ### Error behaviour (`on_error`)
 
-A top-level knob controls what the gatekeeper emits when it *itself* fails — unparseable stdin, unparseable config, a bad rule regex, an evaluate error, or a recovered panic. A clean "no rule matched" is **not** an error and always abstains. A **missing** config is likewise a clean absence (no rules → abstain), *not* an error — `on_error = "deny"` does not hard-fail when no config file exists.
+A top-level knob controls what the gatekeeper emits when it *itself* fails — unparseable stdin, a bad rule regex, an evaluate error, or a recovered panic. A readable global knob can also protect a malformed project overlay. A clean "no rule matched" is **not** an error and always abstains. Because this knob lives in the policy file, it cannot protect against its own file being missing or malformed; unreadable policy cannot communicate its own posture.
 
 ```toml
 on_error = "abstain"   # default — emit NO verdict; the harness's native permission system decides.
 # on_error = "deny"    # opt-in hard posture — on any error, emit an explicit deny.
 ```
 
+For a fail-closed posture that survives missing or malformed global/project policy, set the independent environment override on the hook command:
+
+```bash
+GATEKEEPER_ON_ERROR=deny claude-gatekeeper --harness claude
+```
+
+The override is read before hook input or configuration. `deny` makes unparseable input, missing/malformed policy, engine errors, and zero loaded rules emit the harness-native deny. `abstain` explicitly selects advisory behavior. If the variable is absent, existing TOML/default behavior is unchanged. Any other non-empty value warns and fails closed; a typo cannot silently widen authority.
+
+An empty XDG policy is selected ahead of the legacy `~/.claude/gatekeeper.toml` for compatibility, but now always emits a stderr warning, including the shadowed legacy path when present. Under `GATEKEEPER_ON_ERROR=deny`, its zero-rule result denies rather than silently abstaining.
+
 The default is `abstain`: the gatekeeper never decides *for* the permission system on its error path (it forces neither allow nor deny). Each harness encodes abstain natively — Claude/Codex write nothing and exit 0 (their native flow runs); grok has no first-class defer, so its adapter routes abstain through grok's documented fail-open path (no verdict, non-deny exit) so no allow is ever asserted.
 
-> On an auto-approve agent (grok `--always-approve`, codex `approval_policy=never`) the *native* decision is auto-run, so under the default `abstain` a gatekeeper error is a no-op there. If you need a hard floor in that setup, set `on_error = "deny"` **and** keep a server-side control (e.g. GitHub branch protection) — the hook alone cannot defend against not being invoked.
+> On an auto-approve agent (grok `--always-approve`, codex `approval_policy=never`) the *native* decision is auto-run, so under the default `abstain` a gatekeeper error is a no-op there. If you need a hard floor that also covers policy loss/corruption, set `GATEKEEPER_ON_ERROR=deny` on the hook command and keep a server-side control (e.g. GitHub branch protection) — the hook alone cannot defend against not being invoked.
 
 ### Security: config trust boundaries
 
