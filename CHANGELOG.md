@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/jim80net/gatekeeper-claude/compare/v1.5.0...v1.5.1) (2026-07-19)
+
+
+### Bug Fixes
+
+* preserve fail-closed posture when policy is unreadable ([#58](https://github.com/jim80net/gatekeeper-claude/issues/58)) ([54ba327](https://github.com/jim80net/gatekeeper-claude/commit/54ba327cdc8eef208eb39b8c220ce67d3efa2efe))
+
 ## [1.5.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.4.1...v1.5.0) (2026-07-18)
 
 
