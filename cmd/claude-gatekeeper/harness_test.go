@@ -190,6 +190,100 @@ func TestOnErrorMatrix(t *testing.T) {
 	}
 }
 
+// TestIndependentFailClosedPostureMatrix pins issue #24's acceptance contract:
+// the error posture survives missing/corrupt policy and malformed hook input on
+// every harness wire because it is resolved independently before those reads.
+func TestIndependentFailClosedPostureMatrix(t *testing.T) {
+	const (
+		claudeInput = `{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"/tmp"}`
+		grokInput   = `{"toolName":"Shell","toolInput":{"command":"git status"},"hookEventName":"pre_tool_use","cwd":"/tmp"}`
+	)
+	type failure string
+	const (
+		missing          failure = "missing"
+		malformedGlobal  failure = "malformed-global"
+		malformedProject failure = "malformed-project"
+		malformedInput   failure = "malformed-input"
+		emptyConfig      failure = "empty-config"
+	)
+	for _, harness := range []string{"claude", "codex", "grok"} {
+		for _, kind := range []failure{missing, malformedGlobal, malformedProject, malformedInput, emptyConfig} {
+			t.Run(harness+"/"+string(kind), func(t *testing.T) {
+				home := t.TempDir()
+				xdg := t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("XDG_CONFIG_HOME", xdg)
+				t.Setenv("GATEKEEPER_ON_ERROR", "deny")
+				cwd := t.TempDir()
+				stdin := claudeInput
+				if harness == "grok" {
+					stdin = grokInput
+				}
+				switch kind {
+				case malformedGlobal:
+					writeTestFile(t, filepath.Join(xdg, "gatekeeper", "gatekeeper.toml"), "not = valid = toml [")
+				case malformedProject:
+					writeTestFile(t, filepath.Join(home, ".claude", "gatekeeper.toml"), "on_error='abstain'\n")
+					writeTestFile(t, filepath.Join(cwd, ".gatekeeper", "gatekeeper.toml"), "not = valid = toml [")
+					stdin = strings.Replace(stdin, `"cwd":"/tmp"`, `"cwd":"`+cwd+`"`, 1)
+				case malformedInput:
+					stdin = "{not json}"
+				case emptyConfig:
+					writeTestFile(t, filepath.Join(xdg, "gatekeeper", "gatekeeper.toml"), "")
+				}
+
+				var stdout bytes.Buffer
+				code := run(strings.NewReader(stdin), &stdout, []string{"--harness", harness})
+				assertHarnessDeny(t, harness, code, stdout.String())
+			})
+		}
+	}
+}
+
+func TestIndependentPostureCompatibilityAndInvalidValue(t *testing.T) {
+	t.Run("absent override preserves missing-config abstain", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		os.Unsetenv("GATEKEEPER_ON_ERROR")
+		var stdout bytes.Buffer
+		code := run(strings.NewReader(hookJSON("Bash", "git status")), &stdout, []string{"--harness", "claude"})
+		if code != 0 || stdout.Len() != 0 {
+			t.Fatalf("exit=%d stdout=%q, want legacy abstain", code, stdout.String())
+		}
+	})
+	t.Run("invalid override cannot widen", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		t.Setenv("GATEKEEPER_ON_ERROR", "denny")
+		var stdout bytes.Buffer
+		code := run(strings.NewReader(hookJSON("Bash", "git status")), &stdout, []string{"--harness", "claude"})
+		assertHarnessDeny(t, "claude", code, stdout.String())
+	})
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertHarnessDeny(t *testing.T, harness string, code int, output string) {
+	t.Helper()
+	if harness == "grok" {
+		if code != 2 || !strings.Contains(output, `"decision":"deny"`) {
+			t.Fatalf("grok deny: exit=%d output=%q", code, output)
+		}
+		return
+	}
+	if code != 0 || !strings.Contains(output, `"permissionDecision":"deny"`) {
+		t.Fatalf("%s deny: exit=%d output=%q", harness, code, output)
+	}
+}
+
 // fakeAdapter panics in ParseInput to exercise runHook's panic-recover path.
 type fakeAdapter struct {
 	encoded *canonical.Verdict
