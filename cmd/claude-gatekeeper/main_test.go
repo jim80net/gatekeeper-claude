@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -198,7 +199,17 @@ func TestRunDoctorFailureExitCodes(t *testing.T) {
 			t.Fatalf("exit code = %d, want 0", code)
 		}
 	})
+	t.Run("table output error", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		if code := run(strings.NewReader(""), errorWriter{err: errors.New("write failed")}, []string{"doctor"}); code != 2 {
+			t.Fatalf("exit code = %d, want 2", code)
+		}
+	})
 }
+
+type errorWriter struct{ err error }
+
+func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestRunNonBashTool(t *testing.T) {
 	setupTestHome(t)
