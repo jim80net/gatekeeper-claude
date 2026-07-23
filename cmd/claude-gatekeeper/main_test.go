@@ -205,6 +205,31 @@ func TestRunDoctorFailureExitCodes(t *testing.T) {
 			t.Fatalf("exit code = %d, want 2", code)
 		}
 	})
+	t.Run("all hook file errors", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		for path, content := range map[string]string{
+			filepath.Join(home, ".grok", "hooks", "gatekeeper.json"): "{",
+			filepath.Join(home, ".codex", "hooks.json"):              "not json",
+		} {
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		var stdout bytes.Buffer
+		if code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--min-surfaces", "0"}); code != 2 {
+			t.Fatalf("exit code = %d, want 2; output = %s", code, stdout.String())
+		}
+		for _, path := range []string{".grok/hooks/gatekeeper.json", ".codex/hooks.json"} {
+			if !strings.Contains(stdout.String(), path) {
+				t.Errorf("output missing %q: %s", path, stdout.String())
+			}
+		}
+	})
 }
 
 type errorWriter struct{ err error }

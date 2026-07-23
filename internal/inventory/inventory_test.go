@@ -219,6 +219,45 @@ func TestCollectIgnoresNonGatekeeperHooksAndMissingSurfaces(t *testing.T) {
 	}
 }
 
+func TestCollectReportsAllUnreadableOrInvalidHookFiles(t *testing.T) {
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), "{", 0644)
+	writeFile(t, filepath.Join(home, ".codex", "hooks.json"), "not json", 0644)
+	bin := filepath.Join(home, "bin", "claude-gatekeeper")
+	writeFile(t, bin, "binary", 0755)
+	writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+
+	report, err := Collect(Options{
+		Home:           home,
+		ExpectedBinary: bin,
+		VersionProbe:   func(string) (string, error) { return "dev", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK || !report.HasFileErrors() {
+		t.Fatalf("report status = OK:%v, HasFileErrors:%v", report.OK, report.HasFileErrors())
+	}
+	if len(report.Files) != 3 || len(report.Surfaces) != 1 {
+		t.Fatalf("files = %#v, surfaces = %#v", report.Files, report.Surfaces)
+	}
+
+	errorsByPath := map[string]string{}
+	for _, file := range report.Files {
+		if file.Error != "" {
+			errorsByPath[file.Path] = file.Error
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(home, ".grok", "hooks", "gatekeeper.json"),
+		filepath.Join(home, ".codex", "hooks.json"),
+	} {
+		if errorsByPath[path] == "" {
+			t.Errorf("missing file error for %s: %#v", path, report.Files)
+		}
+	}
+}
+
 func TestWriteJSONAndTable(t *testing.T) {
 	report := Report{OK: true, ExpectedVersion: "1.0.0", Surfaces: []Surface{{
 		Kind: "grok-global", ConfigPath: "/home/me/.grok/hooks/gatekeeper.json",
@@ -237,6 +276,19 @@ func TestWriteJSONAndTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"SURFACE", "grok-global", "1.0.0", "OK"} {
+		if !strings.Contains(table.String(), want) {
+			t.Errorf("table missing %q:\n%s", want, table.String())
+		}
+	}
+}
+
+func TestWriteTableIncludesFileErrors(t *testing.T) {
+	report := Report{Files: []FileSummary{{Path: "/tmp/hooks.json", Error: "invalid JSON"}}}
+	var table strings.Builder
+	if err := WriteTable(&table, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"/tmp/hooks.json", "error: invalid JSON"} {
 		if !strings.Contains(table.String(), want) {
 			t.Errorf("table missing %q:\n%s", want, table.String())
 		}

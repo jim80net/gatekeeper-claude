@@ -174,6 +174,9 @@ func runDoctor(stdout io.Writer, args []string) int {
 			return 2
 		}
 	}
+	if report.HasFileErrors() {
+		return 2
+	}
 	if !report.OK {
 		return 1
 	}
