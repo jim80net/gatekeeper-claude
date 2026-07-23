@@ -47,6 +47,7 @@ type FileSummary struct {
 	Recognized   int      `json:"commands_recognized"`
 	Unrecognized []string `json:"unrecognized_commands"`
 	Warnings     []string `json:"warnings"`
+	Error        string   `json:"error,omitempty"`
 }
 
 // Surface describes one recognized live gatekeeper command and its drift.
@@ -108,7 +109,14 @@ func Collect(opts Options) (Report, error) {
 			continue
 		}
 		if err != nil {
-			return Report{}, fmt.Errorf("read %s: %w", c.path, err)
+			report.OK = false
+			report.Files = append(report.Files, FileSummary{
+				Path:         c.path,
+				Unrecognized: []string{},
+				Warnings:     []string{},
+				Error:        err.Error(),
+			})
+			continue
 		}
 		summary := FileSummary{Path: c.path, Unrecognized: []string{}, Warnings: append([]string{}, shapeWarnings...)}
 		summary.CommandsSeen = len(commands)
@@ -156,6 +164,16 @@ func Collect(opts Options) (Report, error) {
 	})
 	sort.Slice(report.Files, func(i, j int) bool { return report.Files[i].Path < report.Files[j].Path })
 	return report, nil
+}
+
+// HasFileErrors reports whether any discovered hook file could not be read or parsed.
+func (r Report) HasFileErrors() bool {
+	for _, file := range r.Files {
+		if file.Error != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // installedPluginRoots reads Claude Code's live-install registry. Cached older
@@ -496,6 +514,9 @@ func WriteTable(w io.Writer, report Report) error {
 		}
 		for _, file := range report.Files {
 			warnings := append([]string{}, file.Warnings...)
+			if file.Error != "" {
+				warnings = append(warnings, "error: "+file.Error)
+			}
 			if len(file.Unrecognized) > 0 {
 				warnings = append(warnings, "unrecognized: "+strings.Join(file.Unrecognized, " | "))
 			}
