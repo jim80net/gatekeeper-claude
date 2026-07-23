@@ -169,7 +169,10 @@ func runDoctor(stdout io.Writer, args []string) int {
 			return 2
 		}
 	} else {
-		inventory.WriteTable(stdout, report)
+		if err := inventory.WriteTable(stdout, report); err != nil {
+			fmt.Fprintf(os.Stderr, "doctor: %v\n", err)
+			return 2
+		}
 	}
 	if !report.OK {
 		return 1

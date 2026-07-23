@@ -467,35 +467,52 @@ func WriteJSON(w io.Writer, report Report) error {
 }
 
 // WriteTable writes the human-readable surface and per-file coverage tables.
-func WriteTable(w io.Writer, report Report) {
+func WriteTable(w io.Writer, report Report) error {
 	if len(report.Surfaces) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "SURFACE\tCONFIG\tHARNESS\tVERSION\tBINARY\tDRIFT")
+		if _, err := fmt.Fprintln(tw, "SURFACE\tCONFIG\tHARNESS\tVERSION\tBINARY\tDRIFT"); err != nil {
+			return err
+		}
 		for _, s := range report.Surfaces {
 			drift := "OK"
 			if len(s.Drift) > 0 {
 				drift = strings.Join(s.Drift, "; ")
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Kind, s.ConfigPath, s.Harness, emptyDash(s.Version), s.BinaryPath, drift)
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Kind, s.ConfigPath, s.Harness, emptyDash(s.Version), s.BinaryPath, drift); err != nil {
+				return err
+			}
 		}
-		_ = tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
 	}
 	if len(report.Files) > 0 {
-		fmt.Fprintln(w)
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "HOOK FILE\tCOMMANDS\tRECOGNIZED\tWARNINGS")
+		if _, err := fmt.Fprintln(tw, "HOOK FILE\tCOMMANDS\tRECOGNIZED\tWARNINGS"); err != nil {
+			return err
+		}
 		for _, file := range report.Files {
 			warnings := append([]string{}, file.Warnings...)
 			if len(file.Unrecognized) > 0 {
 				warnings = append(warnings, "unrecognized: "+strings.Join(file.Unrecognized, " | "))
 			}
-			fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", file.Path, file.CommandsSeen, file.Recognized, emptyDash(strings.Join(warnings, "; ")))
+			if _, err := fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", file.Path, file.CommandsSeen, file.Recognized, emptyDash(strings.Join(warnings, "; "))); err != nil {
+				return err
+			}
 		}
-		_ = tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
 	}
 	for _, warning := range report.Warnings {
-		fmt.Fprintf(w, "WARNING: %s\n", warning)
+		if _, err := fmt.Fprintf(w, "WARNING: %s\n", warning); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func sameBinaryPath(left, right string) bool { return canonicalPath(left) == canonicalPath(right) }

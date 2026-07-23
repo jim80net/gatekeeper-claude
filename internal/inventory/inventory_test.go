@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -232,7 +233,9 @@ func TestWriteJSONAndTable(t *testing.T) {
 		t.Fatalf("json = %q, err = %v", jsonOut.String(), err)
 	}
 	var table strings.Builder
-	WriteTable(&table, report)
+	if err := WriteTable(&table, report); err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{"SURFACE", "grok-global", "1.0.0", "OK"} {
 		if !strings.Contains(table.String(), want) {
 			t.Errorf("table missing %q:\n%s", want, table.String())
@@ -255,11 +258,36 @@ func TestEmptyJSONUsesArraysAndTableHasNoSurfaceHeader(t *testing.T) {
 		t.Fatalf("json = %s", out.String())
 	}
 	out.Reset()
-	WriteTable(&out, report)
+	if err := WriteTable(&out, report); err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(out.String(), "SURFACE") || !strings.Contains(out.String(), "WARNING") {
 		t.Fatalf("table = %q", out.String())
 	}
 }
+
+func TestWriteTablePropagatesWriterErrors(t *testing.T) {
+	want := errors.New("write failed")
+	for _, tc := range []struct {
+		name   string
+		report Report
+	}{
+		{"surface table flush", Report{Surfaces: []Surface{{Kind: "claude-settings"}}}},
+		{"file table separator", Report{Files: []FileSummary{{Path: "/tmp/hooks.json"}}}},
+		{"warning", Report{Warnings: []string{"drift"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := WriteTable(errorWriter{err: want}, tc.report)
+			if !errors.Is(err, want) {
+				t.Fatalf("error = %v, want %v", err, want)
+			}
+		})
+	}
+}
+
+type errorWriter struct{ err error }
+
+func (w errorWriter) Write([]byte) (int, error) { return 0, w.err }
 
 func TestCollectSurfaceOrderIsStableByCommand(t *testing.T) {
 	home := t.TempDir()
